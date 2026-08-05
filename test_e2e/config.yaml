@@ -1,0 +1,101 @@
+paths:
+  input_dir: ./test_e2e/input
+  output_dir: ./test_e2e/output
+  temp_dir: ./test_e2e/temp
+  pool_dir: ./test_e2e/pool
+  prompt_template: ./prompts/reddit_story.txt
+  short_prompt: ./prompts/short_story.txt
+  thumbnail_template: ./assets/3.png
+  shorts_dir: ./test_e2e/shorts
+  data_dir: ./data
+openrouter:
+  model: nvidia/nemotron-3-ultra-550b-a55b:free
+  temperature: 0.9
+  max_retries: 5
+tts:
+  voice_male: es-ES-AlvaroNeural
+  voice_female: es-ES-ElviraNeural
+  rate: +0%
+  volume: +0%
+  whisper_model: small
+subtitles:
+  font_name: Impact
+  font_size: 150
+  primary_color: '&H00FFFFFF'
+  outline_color: '&H00000000'
+  outline_width: 8
+  shadow_depth: 0
+  alignment: 5
+  margin_v: 0
+  max_chars_per_line: 40
+  words_per_subtitle: 1
+  uppercase: true
+video:
+  output_codec: h264_nvenc
+  crf: 23
+  audio_codec: aac
+  audio_bitrate: 192k
+  preset: p2
+  loop_gameplay: true
+story:
+  target_wpm: 195
+  min_words: 200
+  max_words: 8000
+  style: dramatic
+  target_duration_min: 150
+  target_duration_max: 900
+  chunk_size: 600
+competition:
+  enabled: false
+  region: ES
+  language: es
+  debate_temperature: 0.4
+  classify_with_llm: true
+  seed_channels: []
+  exclude_channels:
+  - Podcast Extra Anormal
+  - Novelas Jo
+  - El último huésped - Relatos de terror
+  - StardustTV-español
+  always_include: []
+  keywords:
+  - historias de reddit minecraft
+  - historias reddit gameplay español
+  - historias reddit parkour español
+  - relatos reddit con gameplay de fondo
+  - historias de subforos
+  - historias reddit español venganza
+  - mi suegra me humilló historia
+  - relatos de venganza familiar
+  - historias de karma jefe
+  - historia herencia familia traición
+  - mi esposa me engañó historia real
+  - historias de justicia laboral
+  discovery:
+    max_searches_per_scan: 4
+    max_competitors: 60
+    videos_per_channel: 15
+    min_subscribers: 5000
+    max_age_days: 60
+    min_video_minutes: 5
+    min_long_form_ratio: 0.3
+    require_spanish: true
+    max_cjk_title_ratio: 0.25
+  scoring:
+    top_n: 12
+    outlier_cap: 5.0
+    min_views: 3000
+    min_duration_min: 8
+    weights:
+      outlier: 0.4
+      engagement: 0.3
+      velocity: 0.2
+      freshness: 0.1
+  quota:
+    daily_limit: 10000
+shorts:
+  enabled: true
+  target_words: 200
+  speed: 1.5
+  generate_per_video: 2
+  per_style: true

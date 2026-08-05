@@ -1,0 +1,373 @@
+import json
+import logging
+import os
+import re
+import time
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+WORDS_PER_BLOCK = 2000  # Each API call generates ~2000 words reliably
+
+
+def _load_prompt_template(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _call_openrouter(messages, config, max_tokens=None):
+    """Send messages to OpenRouter and return response text.
+
+    Reintenta los fallos transitorios (honra `openrouter.max_retries`), incluido
+    el caso de un 200 SIN 'choices': los modelos del tier gratuito devuelven a
+    veces un 200 con un cuerpo de error, y sin este guardia reventaba con un
+    KeyError('choices') a mitad de una historia de 8 bloques.
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY") or config.get("openrouter", {}).get("api_key", "")
+    if not api_key:
+        raise RuntimeError(
+            "Falta la API key de OpenRouter. Configúrala en .env:\n"
+            "  OPENROUTER_API_KEY=sk-or-..."
+        )
+
+    or_config = config.get("openrouter", {})
+    model = or_config.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free")
+    temperature = or_config.get("temperature", 0.9)
+    max_retries = max(1, int(or_config.get("max_retries", 3)))
+
+    payload = {"model": model, "messages": messages, "temperature": temperature}
+
+    # Sin max_tokens, el proveedor aplica su propio tope y puede cortar la
+    # respuesta a mitad. Con modelos de razonamiento es especialmente grave:
+    # gastan el presupuesto pensando en voz alta y devuelven un fragmento.
+    limit = max_tokens or or_config.get("max_tokens")
+    if limit:
+        payload["max_tokens"] = int(limit)
+
+    last_error = None
+
+    for attempt in range(max_retries):
+        if attempt:
+            delay = 5 * (2 ** (attempt - 1))
+            logger.warning(f"OpenRouter: reintento {attempt + 1}/{max_retries} en {delay}s ({last_error})")
+            time.sleep(delay)
+
+        try:
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+                timeout=180,
+            )
+        except requests.RequestException as e:
+            last_error = f"error de red: {e}"
+            continue
+
+        # 429 y 5xx son transitorios (los modelos free se saturan a menudo).
+        if resp.status_code in (408, 429, 500, 502, 503, 520, 524):
+            last_error = f"HTTP {resp.status_code}: {resp.text[:150]}"
+            continue
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"Error de OpenRouter: {resp.status_code} — {resp.text[:300]}")
+
+        try:
+            data = resp.json()
+        except ValueError:
+            last_error = f"respuesta no-JSON: {resp.text[:150]}"
+            continue
+
+        choices = data.get("choices") or []
+        content = choices[0].get("message", {}).get("content", "").strip() if choices else ""
+        if content:
+            return content
+
+        last_error = f"200 sin contenido: {json.dumps(data, ensure_ascii=False)[:200]}"
+
+    raise RuntimeError(
+        f"OpenRouter falló tras {max_retries} intentos con el modelo '{model}' — {last_error}"
+    )
+
+
+def _parse_title_and_speech(text):
+    """Separa título (primera línea no vacía) del speech (resto)."""
+    lines = text.strip().split("\n")
+    title = ""
+    speech_start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped:
+            title = stripped
+            speech_start = i + 1
+            break
+    while speech_start < len(lines) and not lines[speech_start].strip():
+        speech_start += 1
+    speech = "\n".join(lines[speech_start:]).strip()
+    return title, speech
+
+
+# Marcadores de que el modelo soltó su razonamiento en vez de la historia.
+# nvidia/nemotron-3-ultra es un modelo de razonamiento y lo hace de vez en
+# cuando: en una corrida real, un short salió con el título "The user wants a
+# viral micro-story script for YouTube Shorts/TikTok." y un vídeo de 4,5s.
+_MARCADORES_RAZONAMIENTO = (
+    "the user", "the assistant", "i need to", "i should", "let me", "we need",
+    "okay,", "alright,", "first,", "sure,", "here's", "here is", "as an ai",
+    "el usuario quiere", "necesito escribir", "vamos a", "voy a escribir",
+    "título:", "titulo:", "historia:", "```",
+)
+
+# Palabras funcionales españolas para confirmar que el título está en español.
+_ES_FUNCIONALES = {
+    "mi", "me", "mis", "la", "el", "los", "las", "de", "del", "que", "por",
+    "para", "con", "un", "una", "y", "pero", "no", "se", "su", "al", "en",
+    "cuando", "porque", "sin", "tras", "hasta", "desde", "lo",
+}
+
+
+def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
+    """¿Esta generación es utilizable? Devuelve (bool, motivo).
+
+    Sin esto, el razonamiento del modelo acababa como título en la miniatura y
+    en la intro, y el speech quedaba en cuatro líneas.
+    """
+    if not title or not speech:
+        return False, "título o speech vacíos"
+
+    palabras_titulo = title.split()
+    if not (min_palabras_titulo <= len(palabras_titulo) <= 45):
+        return False, f"título de {len(palabras_titulo)} palabras (esperado {min_palabras_titulo}-45)"
+
+    bajo = title.lower()
+    for marcador in _MARCADORES_RAZONAMIENTO:
+        if marcador in bajo:
+            return False, f"el título contiene razonamiento del modelo ('{marcador}')"
+
+    # El título tiene que parecer español, no inglés.
+    tokens = re.findall(r"[a-záéíóúüñ]+", bajo)
+    aciertos = sum(1 for t in tokens if t in _ES_FUNCIONALES)
+    if aciertos < 2 and not re.search(r"[áéíóúñü]", bajo):
+        return False, "el título no parece español"
+
+    if len(speech.split()) < min_palabras_speech:
+        return False, f"speech de {len(speech.split())} palabras (mínimo {min_palabras_speech})"
+
+    return True, ""
+
+
+def _normalize_for_compare(text):
+    """Normalize text for comparison: lowercase, strip punctuation."""
+    import re
+    return re.sub(r'[^a-záéíóúüñ\s]', '', text.lower()).strip()
+
+
+def _ensure_title_at_start(title, story):
+    """Ensure the speech starts with the full title as its first sentence.
+
+    If the LLM didn't include the full title:
+    1. Remove any partial overlap at the start of the speech
+    2. Prepend the full title
+    """
+    import re as _re
+
+    # Clean title
+    title_clean = title.rstrip('.').rstrip()
+    while title_clean.endswith('.'):
+        title_clean = title_clean[:-1].rstrip()
+    title_sentence = title_clean + "."
+
+    title_norm = _normalize_for_compare(title_clean)
+    title_words = title_norm.split()
+
+    # Check if speech already starts with the FULL title
+    story_start = " ".join(story.split()[:len(title_words) + 3])
+    story_start_norm = _normalize_for_compare(story_start)
+
+    if title_norm in story_start_norm:
+        logger.info("Speech ya empieza con el titulo completo")
+        return story
+
+    # Remove any partial overlap of the title at the start of the speech
+    # Find how many words of the title match the start of the story
+    story_words = story.split()
+    story_norm_words = _normalize_for_compare(" ".join(story_words[:len(title_words)])).split()
+
+    overlap = 0
+    for i in range(min(len(title_words), len(story_norm_words))):
+        if title_words[i] == story_norm_words[i]:
+            overlap = i + 1
+        else:
+            break
+
+    if overlap > 0:
+        # Remove the overlapping partial title from the story start
+        story = " ".join(story_words[overlap:])
+        # Also remove any leading partial sentence (until first period)
+        first_period = story.find('.')
+        if first_period != -1 and first_period < 100:
+            # Check if the text before the period is a fragment of the title
+            fragment_norm = _normalize_for_compare(story[:first_period])
+            title_remainder_norm = _normalize_for_compare(" ".join(title_clean.split()[overlap:]))
+            if fragment_norm and title_remainder_norm and fragment_norm not in title_remainder_norm:
+                pass  # Not a title fragment, keep it
+            else:
+                story = story[first_period + 1:].strip()
+        logger.info(f"Eliminado solapamiento de {overlap} palabras del inicio")
+
+    logger.info("Forzando titulo al inicio del speech")
+    return title_sentence + " " + story.strip()
+
+
+def _generate_first_block(target_words, style, config):
+    """Generate title + first block (~2000 words): hook + context + start of escalation."""
+    template = _load_prompt_template(config["paths"]["prompt_template"])
+    prompt = template.format(target_words=target_words, style=style)
+
+    # Add instruction to generate first block
+    prompt += f"""
+
+IMPORTANTE: Esta historia debe tener {target_words} palabras en TOTAL, pero la vas a generar por partes.
+Ahora genera SOLO el TÍTULO + las primeras ~{WORDS_PER_BLOCK} palabras.
+
+REGLA CRÍTICA: La primera frase del speech DEBE SER exactamente el texto del título (sin los "..."). Es la frase que aparecerá en la miniatura y la intro del video. Ejemplo: si el título es "Mi Jefe Me Humilló En La Cena De Empresa...", el speech debe empezar: "Mi jefe me humilló en la cena de empresa." y luego continuar desarrollando la escena con detalle.
+
+Incluye: el hook inicial (escena del título con mucho detalle), el contexto del pasado, y empieza las escaladas del abuso.
+NO termines la historia. Corta en un punto de tensión. La historia CONTINUARÁ en el siguiente mensaje.
+Escribe MÍNIMO {WORDS_PER_BLOCK} palabras en este bloque.
+
+RECORDATORIO: Escribe en párrafos largos y fluidos. NO fragmentes en líneas cortas. NO uses comillas ni guiones de diálogo. Integra todo en narración continua."""
+
+    intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
+    for intento in range(intentos):
+        mensaje = prompt
+        if intento:
+            mensaje = (
+                "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de la "
+                "historia. Empieza directamente por el TÍTULO en español, sin ningún texto "
+                "previo, y a continuación el speech.\n\n"
+            ) + prompt
+
+        raw = _call_openrouter([{"role": "user", "content": mensaje}], config)
+        title, speech = _parse_title_and_speech(raw)
+        ok, motivo = _validar_salida(title, speech, min_palabras_titulo=12,
+                                     min_palabras_speech=200)
+        if ok:
+            return title, speech
+        logger.warning(f"Generación descartada ({motivo}); reintento {intento + 2}/{intentos}")
+
+    raise RuntimeError(
+        f"El modelo no devolvió una historia utilizable tras {intentos} intentos. "
+        f"Último motivo: {motivo}. Último título: {title[:120]!r}"
+    )
+
+
+def _generate_continuation(title, story_so_far, target_words, words_remaining, is_final, config):
+    """Generate a continuation block of the story."""
+
+    if is_final:
+        instruction = f"""Continúa y TERMINA esta historia. Escribe las últimas ~{words_remaining} palabras.
+
+Incluye:
+- El plan y su ejecución (confrontaciones, pruebas, acciones legales)
+- Las consecuencias para los abusadores (pierden dinero, reputación, relaciones)
+- Un epílogo: meses/años después, cómo está el protagonista ahora, reflexión final
+
+NO dejes la historia abierta. Ciérrala con un final satisfactorio.
+Escribe MÍNIMO {words_remaining} palabras. NO escribas menos.
+
+RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni guiones de diálogo. Narración continua."""
+    else:
+        instruction = f"""Continúa esta historia. Escribe las siguientes ~{WORDS_PER_BLOCK} palabras.
+
+Continúa con:
+- Más escaladas del abuso (escenas específicas, detalles concretos, cantidades, fechas)
+- El momento de quiebre del protagonista
+- El inicio del plan de acción
+
+NO termines la historia todavía. Corta en un punto de tensión.
+Escribe MÍNIMO {WORDS_PER_BLOCK} palabras. NO escribas menos.
+
+RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni guiones de diálogo. Narración continua."""
+
+    messages = [
+        {
+            "role": "user",
+            "content": f"Estás escribiendo una historia larga para YouTube titulada:\n\"{title}\"\n\nLa historia total debe tener {target_words} palabras. Llevas {len(story_so_far.split())} palabras escritas hasta ahora."
+        },
+        {
+            "role": "assistant",
+            "content": story_so_far
+        },
+        {
+            "role": "user",
+            "content": instruction
+        },
+    ]
+
+    return _call_openrouter(messages, config)
+
+
+def generate_story(target_words, style, config):
+    """Generate a complete story in blocks, concatenating until target_words is reached."""
+
+    num_blocks = max(2, (target_words + WORDS_PER_BLOCK - 1) // WORDS_PER_BLOCK)
+    logger.info(f"Generando historia de {target_words} palabras en ~{num_blocks} bloques")
+
+    # Block 1: Title + hook + context
+    logger.info(f"Bloque 1/{num_blocks}: generando titulo + inicio...")
+    title, story = _generate_first_block(target_words, style, config)
+
+    # FORCE: ensure speech starts with the full title sentence
+    story = _ensure_title_at_start(title, story)
+
+    word_count = len(story.split())
+    logger.info(f"Bloque 1: {word_count} palabras, titulo: {title[:60]}...")
+
+    # Blocks 2+: Continuations
+    max_attempts = num_blocks + 2  # allow a couple extra attempts
+    block = 2
+
+    while word_count < target_words * 0.85 and block <= max_attempts:
+        words_remaining = target_words - word_count
+        is_final = (words_remaining <= WORDS_PER_BLOCK * 1.3) or (block >= max_attempts)
+
+        logger.info(f"Bloque {block}/{num_blocks}: {word_count}/{target_words} palabras, pidiendo {'final' if is_final else 'continuación'}...")
+
+        continuation = _generate_continuation(
+            title, story, target_words, words_remaining, is_final, config
+        )
+
+        story = story.strip() + "\n\n" + continuation.strip()
+        word_count = len(story.split())
+        logger.info(f"Bloque {block}: total acumulado {word_count} palabras")
+
+        block += 1
+
+        if is_final:
+            break
+
+    # Truncate if overshooting
+    if word_count > target_words * 1.2:
+        logger.info(f"Truncando de {word_count} a ~{target_words} palabras")
+        story = _truncate_to_words(story, target_words)
+        word_count = len(story.split())
+
+    logger.info(f"Historia completa: {word_count} palabras ({word_count/target_words:.0%} del objetivo)")
+    return title, story
+
+
+def _truncate_to_words(text, max_words):
+    sentences = text.replace("!", "!|").replace("?", "?|").replace(".", ".|").split("|")
+    result = []
+    count = 0
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        words = sentence.split()
+        if count + len(words) > max_words:
+            break
+        result.append(sentence)
+        count += len(words)
+    return " ".join(result)

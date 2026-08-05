@@ -1,0 +1,17 @@
+.env
+input/
+output/
+temp/
+pool/
+shorts_tiktok/
+data/
+__pycache__/
+*.pyc
+pipeline.log
+*.bak
+# El fixture del gate: se ignora el contenido (clip.mp4 son 1,5 GB) pero la
+# config SÍ se versiona — un gate que cada uno tiene distinto no es un gate.
+# Ojo: tiene que ser `test_e2e/*` y no `test_e2e/`, o git no puede re-incluir
+# nada de dentro (un directorio excluido no se recorre).
+test_e2e/*
+!test_e2e/config.yaml

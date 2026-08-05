@@ -1,0 +1,11 @@
+# Instalación: pip install -r requirements.txt
+# (FFmpeg/FFprobe NO van aquí: se instalan aparte, p. ej. winget install Gyan.FFmpeg)
+
+edge-tts          # TTS español de España
+pyyaml            # config.yaml
+requests          # OpenRouter + YouTube Data API v3
+Pillow            # miniaturas y title cards
+numpy             # video_cleaner: detección de hotbar sobre frames
+faster-whisper    # backend de reconocimiento para el forced alignment
+stable-ts         # forced alignment palabra a palabra (importa como stable_whisper)
+streamlit         # dashboard de operación

@@ -1,0 +1,147 @@
+# === YouTube Automation Config ===
+
+paths:
+  input_dir: "./input"
+  output_dir: "./output"
+  temp_dir: "./temp"
+  pool_dir: "./pool"             # gameplay limpio listo para usar
+  prompt_template: "./prompts/reddit_story.txt"
+  short_prompt: "./prompts/short_story.txt"
+  thumbnail_template: "./assets/3.png"
+  shorts_dir: "./shorts_tiktok"
+  data_dir: "./data"             # state de competencia, informes y consejos
+
+openrouter:
+  # google/gemini-2.0-flash-001 fue retirado de OpenRouter (404 "no endpoints found")
+  # y ya no queda ningún Gemini gratuito. Sustituto validado contra el prompt real:
+  # título de 34 palabras (regla 20-35), bloque de ~1900 palabras, ~80s por bloque.
+  # Alternativa descartada: inclusionai/ling-3.0-flash:free (rápido pero no separa
+  # título y speech, y el parser se traga el primer párrafo entero como título).
+  model: "nvidia/nemotron-3-ultra-550b-a55b:free"
+  temperature: 0.9
+  max_retries: 5   # el tier gratuito devuelve ResourceExhausted a menudo (visto en el E2E)
+
+tts:
+  voice_male: "es-ES-AlvaroNeural"
+  voice_female: "es-ES-ElviraNeural"
+  rate: "+0%"
+  volume: "+0%"
+  whisper_model: "small"          # small = mejor precision para español (base tiene drift en silencios)
+
+subtitles:
+  font_name: "Impact"
+  font_size: 150
+  primary_color: "&H00FFFFFF"    # blanco (formato ASS BGR)
+  outline_color: "&H00000000"    # negro
+  outline_width: 8
+  shadow_depth: 0
+  alignment: 5                   # centrado medio de pantalla
+  margin_v: 0
+  max_chars_per_line: 40
+  words_per_subtitle: 1          # palabra a palabra
+  uppercase: true                # MAYÚSCULAS
+
+video:
+  output_codec: "h264_nvenc"     # GPU NVIDIA encoding (CPU ~10%)
+  crf: 23                        # usado como -cq para nvenc
+  audio_codec: "aac"
+  audio_bitrate: "192k"
+  preset: "p2"                   # nvenc: p1(fastest)-p7(best) — p2 = rapido, YouTube recomprime igual
+  loop_gameplay: true
+
+story:
+  # MEDIDO en producción: es-ES-AlvaroNeural habla a ~200 palabras/minuto
+  # (395 palabras en 118.2s), no a 150. Con 150 se pedían pocas palabras y el
+  # vídeo salía un ~30% más corto que el gameplay disponible (chunk de 171s ->
+  # vídeo de 118s): el resto del gameplay se tiraba. 195 es ligeramente
+  # conservador; si el audio se pasa, loop_gameplay repite el vídeo sin problema.
+  target_wpm: 195
+  min_words: 500
+  max_words: 8000
+  style: "dramatic"              # dramatic | funny | horror | wholesome
+  target_duration_min: 1200      # 20 min: mínimo para producir un video
+  target_duration_max: 2400      # 40 min: a partir de aquí se corta (30 min chunk + sobrante)
+  chunk_size: 1800               # 30 min: tamaño del chunk cuando se corta
+
+# === Análisis de competencia (YouTube Data API v3) ===
+# Requiere YOUTUBE_API_KEY en .env. Cuota gratuita: 10.000 unidades/día.
+# Coste real MEDIDO: ~470 unidades un escaneo con descubrimiento, ~120 re-midiendo
+# (--no-discover). Caben unos 20 escaneos completos al día.
+#
+# EL NICHO: historias de Reddit narradas en PRIMERA PERSONA con gameplay de fondo.
+# No basta con "español + formato largo": por ahí entran granjas de drama asiático
+# doblado, películas y podcasts de terror. De ahí las keywords de FORMATO y el
+# clasificador por LLM.
+competition:
+  enabled: true
+  region: "ES"                   # regionCode para las búsquedas
+  language: "es"                 # relevanceLanguage
+  debate_temperature: 0.4        # más bajo que el de historias: criterio, no creatividad
+  classify_with_llm: true        # el modelo separa competencia real de drama doblado/pelis/podcasts
+                                 # (los heurísticos no pueden: ver CLAUDE.md)
+
+  seed_channels: []              # opcional: IDs (UC...), URLs o @handles de canales semilla
+  exclude_channels:              # ruido confirmado: español y formato largo, pero otro nicho
+    - "Podcast Extra Anormal"    # paranormal/terror, 2.41M subs — copaba 4 de 12 puestos virales
+    - "Novelas Jo"               # novelas chinas dobladas
+    - "El último huésped - Relatos de terror"
+    - "StardustTV-español"       # cortometrajes dramáticos, no narración
+    # (acepta ID UC..., URL o el título exacto del canal)
+
+  always_include: []             # TU VETO sobre el clasificador: lo que pongas aquí
+                                 # nunca se descarta automáticamente.
+                                 # Candidato a revisar: "rBarra Historias" (124k subs,
+                                 # gameplay 100%) — el modelo lo descartó por ser
+                                 # compilaciones de AskReddit y no historias narradas.
+
+  # Las keywords van en dos bloques a propósito:
+  #  - FORMATO: buscan el nicho real (historia narrada sobre gameplay). Son las
+  #    que traen competencia de verdad; van primero para que entren en la
+  #    rotación desde el primer escaneo.
+  #  - TEMA: buscan el contenido. Traen volumen, pero también canales de terror,
+  #    novelas dobladas y cortometrajes que compiten en otra liga.
+  keywords:
+    - "historias de reddit minecraft"
+    - "historias reddit gameplay español"
+    - "historias reddit parkour español"
+    - "relatos reddit con gameplay de fondo"
+    - "historias de subforos"
+    - "historias reddit español venganza"
+    - "mi suegra me humilló historia"
+    - "relatos de venganza familiar"
+    - "historias de karma jefe"
+    - "historia herencia familia traición"
+    - "mi esposa me engañó historia real"
+    - "historias de justicia laboral"
+
+  discovery:
+    max_searches_per_scan: 4     # 100 unidades cada una — es el gasto dominante
+    max_competitors: 60          # canales activos que se miden por corrida (2 unidades c/u)
+    videos_per_channel: 15       # últimos N videos por canal (2 unidades por canal)
+    min_subscribers: 5000
+    max_age_days: 60             # ventana de "reciente" para virales y actividad
+    min_video_minutes: 5         # descarta canales solo-shorts
+    min_long_form_ratio: 0.3
+    require_spanish: true
+    max_cjk_title_ratio: 0.25    # descarta granjas de drama chino doblado (títulos con 【】)
+
+  scoring:
+    top_n: 12                    # cuántos virales entran en el informe y el debate
+    outlier_cap: 5.0             # a partir de xN sobre su media, el outlier ya puntúa al máximo
+    min_views: 3000              # suelo: por debajo, xN es ruido estadístico, no viralidad
+    min_duration_min: 8          # suelo por VÍDEO: un corto no informa un vídeo de 20-40 min
+    weights:                     # engagement/velocity/freshness van por percentil; outlier por magnitud
+      outlier: 0.40              # vistas / mediana del canal — la señal de viralidad real
+      engagement: 0.30           # (likes + comentarios) / vistas
+      velocity: 0.20             # vistas por hora
+      freshness: 0.10            # cuanto más reciente, mejor
+
+  quota:
+    daily_limit: 10000           # tope local; corta antes de que Google devuelva 403
+
+shorts:
+  enabled: true
+  target_words: 200              # ~60-90 segundos a velocidad normal
+  speed: 1.5                     # playback speed (x1.5 = faster narration)
+  generate_per_video: 2          # cuántos shorts generar por cada video largo
+  per_style: true                # si generar shorts de estilo similar al video largo o aleatorio
