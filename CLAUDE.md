@@ -39,7 +39,7 @@ Los cuatro bugs graves de este repo produjeron **vídeos completos y reproducibl
 - **Verificación por EJECUCIÓN, nunca por informe.** Corre el comando tú y pega la SALIDA REAL. "Reportó que está OK" no cierra nada.
 - **Una garantía prometida en el prompt no está garantizada hasta que un `if` la fuerza.** Ya falló tres veces aquí (comas, título, variedad de shorts).
 - Cambios en **superficies sensibles** (alineación, limpieza de texto, ingesta, historia, composición, cuota — tabla en `produccion-loop.md` §B) → **`/eval` antes de cerrar** + `output-audit`.
-- **El coste es cuota, no dinero:** 50 peticiones/día en OpenRouter free, 10.000 unidades/día en la YouTube API. Un cambio que sube las peticiones por vídeo se reporta aunque nadie lo pregunte.
+- **El coste es cuota, no dinero:** 1000 peticiones/día en OpenRouter free (verificado ago 2026: 10 créditos comprados), 10.000 unidades/día en la YouTube API. Un cambio que sube las peticiones por vídeo se reporta aunque nadie lo pregunte.
 
 ## LO QUE NUNCA DEBES HACER
 
@@ -376,8 +376,9 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
 
 ### OpenRouter — tope DIARIO de peticiones (no es cuestión de dinero)
 - Los modelos `:free` tienen un límite de **peticiones al día**, no solo de rate: con menos de 10 créditos comprados son **50/día**; a partir de 10 créditos, 1000/día. El error es `429 Rate limit exceeded: free-models-per-day`
-- Es el cuello de botella REAL de producción: un vídeo de 30 min son ~4 bloques de historia + ~30 shorts ≈ 34 peticiones, más el análisis de competencia (5-15). Con 50/día sale **~1 vídeo al día**
-- **Estado de la cuenta (ago 2026): 0 créditos comprados, saldo -0,06 USD.** Sin crédito NO se pueden usar modelos de pago; la única vía es el tier gratuito con su tope de 50/día
+- Un vídeo de 30 min son 3 bloques de historia + 45 shorts = **48 peticiones** (suelo, cero reintentos; recalculado ago 2026 tras separar `shorts.narration_wpm` de `story.target_wpm`), más el análisis de competencia (5-15)
+- **Estado de la cuenta: 10 créditos comprados, saldo 9,94 USD → tope de 1000 peticiones/día** (VERIFICADO 10-ago-2026 con `GET /api/v1/credits` → `{'total_credits': 10, 'total_usage': 0.0638}`, `is_free_tier: False`). Con eso caben **~20 vídeos/día**, así que la cuota dejó de ser el cuello de botella: ahora lo son el reloj y el disco
+- ⚠️ Este apartado dijo durante meses "0 créditos, saldo −0,06 USD, 50/día" **cuando ya era falso**, y tres revisiones independientes lo repitieron como hecho porque estaba escrito aquí. Un dato de estado de cuenta caduca: **verifícalo con la API antes de dimensionar nada**, no lo leas de este fichero
 - **Ojo al leer la API**: `/api/v1/key` devuelve `limit` y `limit_remaining`, que son el **tope de gasto configurado en esa clave**, NO el saldo. El saldo real está en `/api/v1/credits` (`total_credits` - `total_usage`). Confundirlos lleva a creer que hay dinero cuando no lo hay
 - Referencia por si algún día se compra crédito: modelos de pago baratos cuestan ~0,001-0,003 USD por vídeo (30k tokens de salida) y no tienen tope diario
 

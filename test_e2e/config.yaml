@@ -38,7 +38,7 @@ video:
   preset: p2
   loop_gameplay: true
 story:
-  target_wpm: 195
+  target_wpm: 160        # sincronizado con produccion (recalibrado ago 2026)
   min_words: 200
   max_words: 8000
   style: dramatic
@@ -97,5 +97,6 @@ shorts:
   enabled: true
   target_words: 200
   speed: 1.5
+  narration_wpm: 200       # dimensiona los shorts, independiente de story.target_wpm
   generate_per_video: 2
   per_style: true
