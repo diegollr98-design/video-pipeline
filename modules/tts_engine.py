@@ -139,11 +139,41 @@ def _clean_speech_for_tts(text):
 # primer grupo la admiten casi siempre; los del segundo solo se usan si el tramo
 # sin puntuación ya es muy largo, porque ahí sí que hay riesgo de coma incorrecta
 # ("el olor a mosto, y a madera vieja" estaría mal).
+# AUDITADO sobre 7.399 palabras de texto español real (ago 2026). El grupo largo
+# original ("que", "para", "sin", "con", "desde", "hasta", "si") producía comas
+# GRAMATICALMENTE INCORRECTAS, que es peor que no meter ninguna: una coma dentro
+# de un sintagma hace que edge-tts pause justo donde no toca, que es el problema
+# que esta función existe para evitar. Casos reales medidos:
+#   "...asegurar la sucesión antes de, que yo me diera..."  (parte "antes de que")
+#   "...mi madre amenazando, con destruir mi carrera..."    (verbo y complemento)
+#   "...pagado con el primer sueldo, que mi padre ganó..."  (relativa especificativa
+#                                                            -> explicativa: CAMBIA
+#                                                            el significado)
+# Se quedan solo los coordinantes, donde la coma cierra una cláusula.
 _CONECTORES_SEGUROS = (
-    "pero", "aunque", "mientras", "porque", "sino", "aunque", "salvo",
-    "aun", "aunque", "aunque", "pues", "aunque",
+    "pero", "aunque", "mientras", "porque", "sino", "pues", "salvo",
 )
-_CONECTORES_LARGOS = ("y", "o", "ni", "que", "cuando", "si", "para", "sin", "con", "desde", "hasta")
+_CONECTORES_LARGOS = ("y", "o", "ni", "cuando")
+
+# Nunca se mete coma detrás de estas: encabezan locuciones ("antes de que",
+# "a salvo", "junto con") y la coma las parte por la mitad.
+_NO_CORTAR_TRAS = frozenset((
+    "a", "de", "en", "con", "por", "para", "sin", "sobre", "tras", "hasta",
+    "desde", "entre", "hacia", "segun", "según", "antes", "después", "despues",
+    "junto", "además", "ademas", "cerca", "lejos", "dentro", "fuera", "acerca",
+))
+
+# Coordinantes: la coma delante solo es correcta si lo que sigue es una CLÁUSULA,
+# no otro sintagma de una enumeración. Medido: "...medía en horas de fábrica, y
+# en renuncias a..." está mal, "...la gente empezaba a mirar, y no quería..."
+# está bien. Señal determinista barata: si tras el coordinante viene una
+# preposición o un artículo, está coordinando sintagmas -> no se mete coma.
+_COORDINANTES = frozenset(("y", "e", "o", "u", "ni"))
+_ARRANQUE_DE_SINTAGMA = frozenset((
+    "a", "de", "en", "con", "por", "para", "sin", "sobre", "tras", "hasta",
+    "desde", "entre", "hacia", "el", "la", "los", "las", "un", "una", "unos",
+    "unas", "lo", "al", "del", "su", "sus", "mi", "mis", "tu", "tus",
+))
 
 # Umbrales: se mete coma en un conector seguro a partir de PALABRAS_RESPIRO
 # palabras sin puntuación, y en uno dudoso solo a partir de PALABRAS_LIMITE.
@@ -171,12 +201,16 @@ def _ensure_breathing_commas(text):
         palabras = parrafo.split()
         salida = []
         desde_pausa = 0
-        for palabra in palabras:
+        for i, palabra in enumerate(palabras):
             limpia = re.sub(r"[^a-záéíóúüñ]", "", palabra.lower())
             # ¿Toca respirar aquí?
             if salida and not salida[-1].rstrip().endswith((",", ".", ";", ":", "!", "?")):
-                if (limpia in _CONECTORES_SEGUROS and desde_pausa >= PALABRAS_RESPIRO) or (
-                    limpia in _CONECTORES_LARGOS and desde_pausa >= PALABRAS_LIMITE
+                previa = re.sub(r"[^a-záéíóúüñ]", "", salida[-1].lower())
+                siguiente = re.sub(r"[^a-záéíóúüñ]", "", palabras[i + 1].lower()) if i + 1 < len(palabras) else ""
+                coordina_sintagma = limpia in _COORDINANTES and siguiente in _ARRANQUE_DE_SINTAGMA
+                if previa not in _NO_CORTAR_TRAS and not coordina_sintagma and (
+                    (limpia in _CONECTORES_SEGUROS and desde_pausa >= PALABRAS_RESPIRO)
+                    or (limpia in _CONECTORES_LARGOS and desde_pausa >= PALABRAS_LIMITE)
                 ):
                     salida[-1] = salida[-1] + ","
                     desde_pausa = 0
@@ -189,7 +223,21 @@ def _ensure_breathing_commas(text):
 
         resultado.append(" ".join(salida))
 
-    return "\n".join(resultado)
+    final = "\n".join(resultado)
+
+    # INVARIANTE CON DIENTES: main.py cuenta palabras para saber cuándo acaba la
+    # frase del título y arrancar la intro. Si esta función cambiase el número de
+    # palabras, la intro se descuadraría en TODOS los vídeos y en silencio. Las
+    # comas se pegan a la palabra anterior, así que el conteo no puede moverse:
+    # un comentario que lo afirma no lo implementa (decision-making.md §17).
+    if len(final.split()) != len(text.split()):
+        raise RuntimeError(
+            "_ensure_breathing_commas cambió el número de palabras "
+            f"({len(text.split())} -> {len(final.split())}). Rompe el cálculo de "
+            "la intro en main.py; se aborta antes de generar nada."
+        )
+
+    return final
 
 
 async def _synthesize_audio(text, audio_path, voice, rate, volume):
