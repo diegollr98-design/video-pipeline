@@ -35,6 +35,35 @@ ahora la seed nº 0 (bloqueante). Contexto auto-cargado: **935 → 1009 líneas*
 reglas nuevas, −21 de compresión). El `/optimize` de hoy **no ahorró tokens, los gastó**: es el precio
 de 4 promociones. El próximo debería ser de poda.
 
+## v0.4 — 2026-08-10 — ANCLA-01 arreglado y medido; dos premisas del SEED refutadas ✅
+**Qué se hizo:** `/seed-review` (TIER PANEL: 1 ciego + 3 críticos) sobre `SEED_sincronismo_produccion.md`
+tumbó dos cosas del plan: (a) su fix del anclaje estaba **refutado aritméticamente** —el paso 1.ª→2.ª
+palabra no predice el error, con inversión de rango (paso 2,11→err 1,07; paso 1,98→err **1,48**)— y
+(b) su bloque A partía de una premisa falsa. Además el ciego destapó un defecto que el SEED no
+nombraba. Se arregló el anclaje (offset = **mediana de residuos del vecindario** + cierre de
+silencios inventados dentro de la ventana + guarda de orden), el dedup de bloques, y se le dio al
+gate la métrica que le faltaba.
+**Incidentes:** [DEDUP-01] [ANCLA-02] [INSTR-04] del ledger.
+**Verificación:** Banco offline sobre la producción real (214 ventanas, contra transcripción
+independiente), con **control del instrumento**: reproduce el `.ass` publicado desde las palabras
+crudas con 0,005 s de media / 0,010 s de máximo. Anclaje viejo → nuevo: palabras desincronizadas
+**204 → 20**, vídeo afectado **60,3 s → 7,2 s**, p95 **1,010 → 0,286 s**, sesgo **+0,005 → −0,040 s**,
+solapes **2 → 0**; las dos ventanas de 94 y 95 palabras pasan de **+1,05 s a −0,065 s**. Invariantes
+comprobados: fin del título **Δ 0,0000 s** (la intro no se mueve), 5290 palabras conservadas, orden
+monótono. `/eval` con shorts (5 peticiones): media **0,0723 → 0,043**, máx **0,400 → 0,320**, sesgo
+−0,0669 → −0,0173 (sigue delante), cobertura 94,6% → 98,1%, pausas fuera de puntuación **1 → 0**
+→ **PASA**. Medido por primera vez el **gemelo**: `short_009` da media 0,026 s, máx 0,300 s, sesgo
+−0,011 s, 0 palabras >0,5 s tarde.
+**Lo que esto enseña:** el emparejador `difflib` **global y el local dan resultados idénticos**
+(5062 pares, 0,153 s, +0,003 s) y coinciden con las transcripciones frescas en las 6 zonas: [INSTR-02]
+acusó al instrumento de un fallo que era ANCLA-01. Comparar un número de producción con el baseline
+del fixture de 3 min es comparar dos regímenes. `data/eval/2026-08-10-produccion-real.json` **no
+estaba mal** y se conserva intacto.
+**Pendiente:** (1) corrida larga de validación — **aplazada por disco** (~7,3 GB con 16 libres; nada
+borrado, decisión de Diego). (2) `output-audit` sobre la salida del gate. (3) `target_wpm`: dejar en
+160 (seis corridas dan 152-162; el 177 es el outlier contaminado). (4) Variedad de los 50 shorts: es
+juicio de Diego (50/50 empiezan por "Mi ‹alguien›"). (5) `short_story.txt` sigue sin directrices.
+
 ## v0.3 — 2026-08-10 — Primera producción real de 30 min: destapó un vídeo no publicable 🔴
 **Qué se hizo:** Corrida completa a escala real (33,4 min de gameplay → vídeo de 29,85 min + 50
 shorts, 53 peticiones, ~2h40). Antes: baseline de `/eval` fijado sobre el fixture de 3 min y

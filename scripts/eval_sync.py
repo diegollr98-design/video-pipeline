@@ -117,17 +117,60 @@ def transcribe(wav_path, model_size="small"):
 
 
 # ---------------------------------------------------------------- emparejado
-def empareja(ass_words, whisper_words):
+def empareja(ass_words, whisper_words, bloque=100, holgura=150):
+    """Empareja por VENTANAS LOCALES, nunca con un difflib global.
+
+    [INSTR-02] Un `difflib` global sobre 5000+ palabras engancha la ocurrencia
+    equivocada allí donde el texto se repite —y estas historias enumeran hechos
+    ya narrados— y FABRICA retraso que no existe. Medido sobre la primera
+    producción real: inflaba la media de 0,072 a 0,153 s, volteaba el sesgo de
+    −0,067 a +0,003 s y daba por rotas tres zonas que una transcripción fresca
+    de 40 s certificó sanas (−0,08 s). Restringiendo la búsqueda a una franja
+    alrededor de la posición esperada, una repetición lejana ya no puede
+    capturar el emparejado.
+
+    Control de este instrumento: reproduce el `.ass` publicado a partir de las
+    palabras crudas con 0,005 s de media y 0,010 s de máximo
+    (`scripts/anchor_bench.py bench`).
+    """
     a = [_normaliza(w[0]) for w in ass_words]
     b = [_normaliza(w) for w, _ in whisper_words]
-    sm = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
     pares = []
-    for i, j, n in sm.get_matching_blocks():
-        for k in range(n):
-            t_ass = ass_words[i + k][1]
-            t_whisper = whisper_words[j + k][1]
-            pares.append((ass_words[i + k][0], t_ass, t_whisper, t_ass - t_whisper))
+    cursor = 0
+    for ini in range(0, len(a), bloque):
+        trozo = a[ini:ini + bloque]
+        lo = max(0, cursor - 40)
+        hi = min(len(b), cursor + len(trozo) + holgura)
+        sm = difflib.SequenceMatcher(a=trozo, b=b[lo:hi], autojunk=False)
+        ultimo = cursor
+        for i, j, n in sm.get_matching_blocks():
+            for k in range(n):
+                ia, ib = ini + i + k, lo + j + k
+                t_ass = ass_words[ia][1]
+                t_whisper = whisper_words[ib][1]
+                pares.append((ass_words[ia][0], t_ass, t_whisper, t_ass - t_whisper))
+                ultimo = ib + 1
+        cursor = ultimo
     return pares
+
+
+def peor_tramo(pares, ancho=40):
+    """Mediana del error en el TRAMO más desincronizado del vídeo.
+
+    [ANCLA-01] La media global y el sesgo dieron por bueno un vídeo con 60 s de
+    subtítulo a +1,05 s de la voz: 204 palabras rotas entre 5290 sanas apenas
+    mueven una media. Lo que delata ese fallo es el peor tramo, no el promedio.
+    """
+    if len(pares) < ancho:
+        return None
+    peor = None
+    for i in range(0, len(pares) - ancho + 1, ancho // 2):
+        errs = sorted(p[3] for p in pares[i:i + ancho])
+        m = errs[len(errs) // 2]
+        if peor is None or abs(m) > abs(peor["mediana"]):
+            peor = {"mediana": round(m, 4), "t": round(pares[i][1], 2),
+                    "palabras": ancho}
+    return peor
 
 
 # ---------------------------------------------------------------- pausas del ASS
@@ -157,6 +200,9 @@ def main():
                     help="Modelo whisper del REFERÍ (small por defecto)")
     ap.add_argument("--json", help="Volcar el resultado a este fichero")
     ap.add_argument("--cobertura-min", type=float, default=0.85)
+    ap.add_argument("--transcripcion",
+                    help="JSON [[palabra, start], ...] ya transcrito, para "
+                         "re-medir una corrida vieja sin repetir el referí")
     args = ap.parse_args()
 
     for p in (args.video, args.ass):
@@ -169,8 +215,16 @@ def main():
         print(f"ERROR: no se leyó ninguna palabra de {args.ass}", file=sys.stderr)
         return 2
 
-    wav = extrae_audio(args.video)
-    whisper_words = transcribe(wav, args.model)
+    if args.transcripcion and os.path.exists(args.transcripcion):
+        # Transcripción del referí ya calculada (10 min de CPU en un vídeo de
+        # 30 min). Solo para re-medir una corrida vieja sin repetirla.
+        whisper_words = [(w, float(t)) for w, t, *_ in
+                         json.load(open(args.transcripcion, encoding="utf-8"))]
+        print(f"referí: transcripción cacheada {args.transcripcion} "
+              f"({len(whisper_words)} palabras)")
+    else:
+        wav = extrae_audio(args.video)
+        whisper_words = transcribe(wav, args.model)
 
     pares = empareja(ass_words, whisper_words)
     n_emp, n_tot = len(pares), len(ass_words)
@@ -189,6 +243,9 @@ def main():
         "error_medio_abs": round(sum(abs_err) / len(abs_err), 4) if abs_err else None,
         "error_max_abs": round(max(abs_err), 4) if abs_err else None,
         "sesgo": round(sum(errores) / len(errores), 4) if errores else None,
+        "error_p95": round(sorted(abs_err)[int(0.95 * (len(abs_err) - 1))], 4) if abs_err else None,
+        "palabras_muy_tarde": sum(1 for e in errores if e > 0.5),
+        "peor_tramo": peor_tramo(pares),
         "pausas_fuera_de_puntuacion": pausas_fuera_de_puntuacion(args.ass),
         "medicion_valida": cobertura >= args.cobertura_min,
     }
@@ -204,6 +261,14 @@ def main():
         print(f"|error| máximo    : {res['error_max_abs']:.3f}s   (objetivo <= 0.30)")
         print(f"sesgo con signo   : {res['sesgo']:+.3f}s   "
               f"({'subtítulo DELANTE de la voz, correcto' if res['sesgo'] < 0 else 'subtítulo DETRÁS de la voz, MAL'})")
+        print(f"|error| p95       : {res['error_p95']:.3f}s   (objetivo <= 0.30)")
+        print(f"palabras >0.5s DETRÁS de la voz: {res['palabras_muy_tarde']} "
+              f"de {n_emp} ({res['palabras_muy_tarde'] / n_emp:.1%})")
+        if res["peor_tramo"]:
+            pt = res["peor_tramo"]
+            estado = "MAL" if abs(pt["mediana"]) > 0.35 else "ok"
+            print(f"PEOR TRAMO ({pt['palabras']} palabras): mediana {pt['mediana']:+.3f}s "
+                  f"en t={pt['t']}s   (objetivo |mediana| <= 0.35)  -> {estado}")
     print(f"pausas fuera de puntuación: {len(res['pausas_fuera_de_puntuacion'])}")
     for p in res["pausas_fuera_de_puntuacion"][:5]:
         print(f"   {p['hueco']}s tras '{p['tras']}' en t={p['t']}s")

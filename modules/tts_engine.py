@@ -402,6 +402,65 @@ async def _synthesize_with_sentences(text, audio_path, voice, rate, volume):
     return sentences
 
 
+# Anclaje robusto (ANCLA-01, medido en la produccion real del 10-ago-2026).
+# Vecindario de ventanas sobre el que se calcula la mediana de residuos y
+# desviacion maxima tolerada antes de declarar el ancla de una ventana corrupta.
+ANCLA_VECINDARIO = 3
+ANCLA_TOL = 0.40
+# Silencio maximo PLAUSIBLE dentro de una misma frase. edge-tts pausa 0,3-0,6 s
+# en una coma (medido, CLAUDE.md); un hueco mayor DENTRO de la ventana es un
+# silencio que Whisper se invento, y arrastra tarde a todo lo que viene detras.
+# Barrido sobre la produccion real (214 ventanas, contra transcripcion
+# independiente): 1.0 -> 20 palabras malas / p95 0,289; 0.8 -> 20 / p95 0,286;
+# 0.7 -> 15 / p95 0,327; 0.6 -> ya adelanta de mas dos ventanas largas SANAS
+# (-0,517 s en una de 76 palabras). 0.8 es el punto donde deja de haber dano
+# colateral en ventanas largas, que son las que dominan el tiempo en pantalla.
+ANCLA_HUECO_MAX = 0.80
+
+
+def _mediana(valores):
+    v = sorted(valores)
+    n = len(v)
+    if not n:
+        return 0.0
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+
+def _enforce_monotonic(words):
+    """Ningun subtitulo puede empezar antes de que acabe el anterior.
+
+    El anclaje mueve ventanas enteras y puede dejar dos palabras solapadas en la
+    misma `\\pos(960,540)` (dos palabras a la vez en pantalla). Medido en el .ass
+    de la primera produccion real: 2 solapes y 1 arranque desordenado ya existian
+    ANTES de tocar nada, sin que ninguna guarda los cortase.
+    """
+    paso_min = 0.05
+    solapes = desordenes = 0
+    for i in range(1, len(words)):
+        prev, cur = words[i - 1], words[i]
+        if cur["start"] < prev["start"] + paso_min:
+            # Palabra que arranca ANTES que la anterior: el orden de lectura
+            # queda invertido en pantalla. Ya pasaba en el .ass publicado.
+            desordenes += 1
+            cur["start"] = prev["start"] + paso_min
+        if cur["end"] <= cur["start"]:
+            # Solo el caso degenerado. NO imponer aqui una duracion minima de
+            # visualizacion: a 200 wpm hay palabras de menos de 0,12 s, y el
+            # suelo las estiraba para que el recorte de la iteracion siguiente
+            # las volviera a encoger. Medido en el fixture de 3 min: 61 "solapes"
+            # que se los inventaba esta misma guarda.
+            cur["end"] = cur["start"] + 0.05
+        if prev["end"] > cur["start"]:
+            solapes += 1
+            prev["end"] = cur["start"]
+    if solapes or desordenes:
+        logger.warning(
+            f"Anclaje: {solapes} solapes recortados y {desordenes} palabras "
+            f"desordenadas reubicadas"
+        )
+    return words
+
+
 def _validate_and_fix_alignment(words, sentences):
     """Hard anchors: use edge-tts SentenceBoundary as exact time anchors.
 
@@ -424,35 +483,80 @@ def _validate_and_fix_alignment(words, sentences):
     (pausas incluidas) y a la vez los extremos quedan clavados al tiempo real de
     la TTS, así que la deriva entre frases sigue siendo imposible.
 
+    ANCLA-01 (medido en la primera produccion real, 10-ago-2026): anclar cada
+    ventana con UNA sola palabra (`offset = s_start - w_first`) es fragil. Si el
+    alineador coloca esa primera palabra dentro del silencio anterior, el silencio
+    entero se convierte en retraso RIGIDO para las hasta ~95 palabras de la
+    ventana. Salieron 204 palabras (60,3 s de video) a ~+1 s por detras de la voz
+    en un video por lo demas sano, y la media global —0,151 s— no lo delataba.
+
+    Por eso el offset ahora es la MEDIANA de los residuos del vecindario y el
+    residuo propio solo se usa si concuerda con sus vecinos; ademas se cierran los
+    silencios que el alineador se inventa DENTRO de la ventana. Medido despues:
+    20 palabras / 7,2 s, p95 1,010 -> 0,286 s, sesgo +0,005 -> -0,040 s.
+    Banco de pruebas reproducible: `scripts/anchor_bench.py bench`.
+
     Result:
-    - Sentence-level sync: PERFECT (anchored to real TTS timing)
-    - Word-level sync within sentence: el ritmo medido por Whisper, reescalado
+    - Sentence-level sync: anclado al tiempo real de la TTS, con ancla robusta
+    - Word-level sync within sentence: el ritmo medido por Whisper, trasladado
     - Drift between sentences: IMPOSSIBLE
     - Natural pauses between sentences: preserved (gaps between windows)
     """
     if not sentences or not words:
         return words
 
+    # --- Paso 1: repartir las palabras en ventanas y medir el residuo de cada una.
+    # El residuo r = s_start - w_first es lo que la version anterior aplicaba tal
+    # cual a TODA la ventana. Si stable-ts coloca la PRIMERA palabra dentro del
+    # silencio anterior, r se contamina con la longitud de ese silencio y las
+    # hasta ~95 palabras de la ventana se van ese tanto por detras de la voz, en
+    # bloque. Medido en la produccion real: 4 ventanas de 214 a +1,05 s de media,
+    # con error PLANO dentro de la ventana (no deriva) = firma de un offset malo.
+    ventanas = []
     word_idx = 0
-    anchored = 0
-    rescaled = 0
-
     for sent in sentences:
-        s_start = sent["start"]
-        s_dur = sent["duration"]
-
-        if s_dur <= 0:
+        if sent["duration"] <= 0:
             continue
-
-        # Match words to this sentence sequentially by word count
-        # (edge-tts text has the exact words it spoke, punctuation included)
         sent_word_count = len(sent["text"].split())
         end_idx = min(word_idx + sent_word_count, len(words))
         indices = list(range(word_idx, end_idx))
         word_idx = end_idx
-
         if not indices:
             continue
+        ventanas.append({
+            "s_start": sent["start"],
+            "s_dur": sent["duration"],
+            "indices": indices,
+            "residuo": sent["start"] - words[indices[0]]["start"],
+        })
+
+    residuos = [v["residuo"] for v in ventanas]
+    corregidas = 0
+
+    anchored = 0
+    rescaled = 0
+
+    for pos, v in enumerate(ventanas):
+        s_start = v["s_start"]
+        s_dur = v["s_dur"]
+        indices = v["indices"]
+
+        # Offset ROBUSTO: la mediana de los residuos del vecindario. El residuo
+        # propio solo se usa si concuerda con sus vecinos; si se desvia mas de
+        # ANCLA_TOL es que la primera palabra de ESTA ventana esta mal colocada,
+        # no que la voz se haya movido.
+        ini = max(0, pos - ANCLA_VECINDARIO)
+        fin = min(len(residuos), pos + ANCLA_VECINDARIO + 1)
+        mediana = _mediana(residuos[ini:fin])
+        offset_ventana = v["residuo"]
+        ancla_corrupta = abs(v["residuo"] - mediana) > ANCLA_TOL
+        if ancla_corrupta:
+            offset_ventana = mediana
+            corregidas += 1
+            logger.warning(
+                f"Ancla descartada en t={s_start:.2f}s ({len(indices)} palabras): "
+                f"residuo {v['residuo']:+.3f}s frente a {mediana:+.3f}s del vecindario"
+            )
 
         s_end = s_start + s_dur
         w_first = words[indices[0]]["start"]
@@ -470,10 +574,38 @@ def _validate_and_fix_alignment(words, sentences):
             # hay deriva acumulada entre frases) y las duraciones siguen siendo
             # las que midió Whisper. Además el silencio final de la ventana queda
             # libre, que es lo que hace desaparecer el subtítulo en las pausas.
-            offset = s_start - w_first
             for idx in indices:
-                words[idx]["start"] += offset
-                words[idx]["end"] += offset
+                words[idx]["start"] += offset_ventana
+                words[idx]["end"] += offset_ventana
+
+            if ancla_corrupta:
+                # El residuo propio era basura para TODA la ventana, pero
+                # `s_start` sigue siendo el instante exacto en que edge-tts
+                # empieza la frase: la primera palabra se clava ahi a mano, sin
+                # arrastrar a las demas. Su fin se recorta contra la palabra
+                # siguiente para no dejar dos subtitulos a la vez en pantalla.
+                primera = words[indices[0]]
+                dur = max(0.12, primera["end"] - primera["start"])
+                primera["start"] = s_start
+                limite = words[indices[1]]["start"] if len(indices) > 1 else s_end
+                primera["end"] = max(s_start + 0.12, min(s_start + dur, limite))
+
+            # Silencios INVENTADOS dentro de la ventana. Es el segundo modo de
+            # fallo, distinto del ancla corrupta y que ningun offset arregla:
+            # medido en la produccion real, la frase 'El silencio que siguio fue
+            # absoluto.' (6 palabras, 2,91 s segun edge-tts) salio de Whisper con
+            # un hueco de 2,09 s entre la 1.ª y la 2.ª palabra, cuando la voz las
+            # dice a 0,36 s de distancia. Ahi el ancla es correcta y lo roto es el
+            # ritmo interior, asi que se cierra el exceso y se adelanta el resto.
+            for j in range(1, len(indices)):
+                previa = words[indices[j - 1]]
+                actual = words[indices[j]]
+                hueco = actual["start"] - previa["end"]
+                if hueco > ANCLA_HUECO_MAX:
+                    exceso = hueco - ANCLA_HUECO_MAX
+                    for idx in indices[j:]:
+                        words[idx]["start"] -= exceso
+                        words[idx]["end"] -= exceso
 
             # Solo si Whisper midió la frase MÁS LARGA que su ventana se
             # comprime, para no invadir la frase siguiente.
@@ -500,7 +632,8 @@ def _validate_and_fix_alignment(words, sentences):
     logger.info(
         f"Anclas duras: {anchored}/{len(sentences)} frases ancladas a SentenceBoundary "
         f"({rescaled} reescaladas sobre el ritmo de Whisper, "
-        f"{anchored - rescaled} repartidas por caracteres)"
+        f"{anchored - rescaled} repartidas por caracteres, "
+        f"{corregidas} anclas corruptas sustituidas por la mediana del vecindario)"
     )
     return words
 
@@ -528,6 +661,7 @@ def run_tts(text, audio_path, vtt_path, config):
 
     # Validate per-sentence: fix clustered words using sentence anchors
     words = _validate_and_fix_alignment(words, sentences)
+    words = _enforce_monotonic(words)
 
     # Build SRT
     srt_content = _build_word_srt(words)

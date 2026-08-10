@@ -459,6 +459,61 @@ RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni gui
     )
 
 
+_DEDUP_MIN_RUN = 12       # palabras consecutivas identicas que delatan una repeticion
+_DEDUP_HEAD_WINDOW = 80   # solo se recorta si la repeticion arranca al PRINCIPIO del bloque
+_DEDUP_TAIL_WINDOW = 600  # cola de la historia contra la que se compara
+
+
+def _normalize_words(words):
+    return [w.lower().strip('.,;:!?¿¡"\'()[]—–-…«»') for w in words]
+
+
+def _strip_duplicated_opening(story, continuation):
+    """Recorta del bloque nuevo el texto que REPITE literalmente lo ya narrado.
+
+    Medido en la primera produccion real (10-ago-2026): el bloque 3 reinicio un
+    parrafo entero del bloque 2 y `generate_story` lo concateno tal cual. En
+    `temp/video_001_story.txt` quedaron 83 palabras repetidas palabra por palabra
+    (posiciones 2687 y 2792) y 72 n-gramas de 12 duplicados. El video narro dos
+    veces el mismo parrafo: no es publicable y ningun guardia lo veia, porque
+    `_validar_continuacion` juzga el bloque AISLADO y no lo compara con lo previo.
+
+    Exige {_DEDUP_MIN_RUN} palabras consecutivas identicas (normalizadas) para
+    cortar: la prosa espanola no repite 12 palabras seguidas por casualidad.
+    Solo mira el ARRANQUE del bloque nuevo, que es donde el modelo re-narra.
+    """
+    cont_words = continuation.split()
+    story_words = story.split()
+    if len(cont_words) < _DEDUP_MIN_RUN or len(story_words) < _DEDUP_MIN_RUN:
+        return continuation, 0
+
+    tail = _normalize_words(story_words[-_DEDUP_TAIL_WINDOW:])
+    head = _normalize_words(cont_words)
+
+    positions = {}
+    for i, w in enumerate(tail):
+        if w:
+            positions.setdefault(w, []).append(i)
+
+    best_run, best_end = 0, 0
+    for j in range(min(_DEDUP_HEAD_WINDOW, len(head))):
+        for i in positions.get(head[j], ()):
+            k = 0
+            while i + k < len(tail) and j + k < len(head) and tail[i + k] == head[j + k]:
+                k += 1
+            if k > best_run:
+                best_run, best_end = k, j + k
+
+    if best_run < _DEDUP_MIN_RUN:
+        return continuation, 0
+
+    logger.warning(
+        f"Bloque duplicado: el modelo re-narro {best_run} palabras ya escritas; "
+        f"se recortan las primeras {best_end} palabras del bloque nuevo"
+    )
+    return " ".join(cont_words[best_end:]).strip(), best_end
+
+
 def generate_story(target_words, style, config):
     """Generate a complete story in blocks, concatenating until target_words is reached."""
 
@@ -489,7 +544,16 @@ def generate_story(target_words, style, config):
             title, story, target_words, words_remaining, is_final, config
         )
 
-        story = story.strip() + "\n\n" + continuation.strip()
+        continuation, recortadas = _strip_duplicated_opening(story, continuation.strip())
+        if recortadas and len(continuation.split()) < 20:
+            logger.warning(
+                f"Bloque {block} era casi todo texto repetido ({recortadas} palabras "
+                f"recortadas, quedan {len(continuation.split())}): se descarta el bloque"
+            )
+            continuation = ""
+
+        if continuation:
+            story = story.strip() + "\n\n" + continuation.strip()
         word_count = len(story.split())
         logger.info(f"Bloque {block}: total acumulado {word_count} palabras")
 
