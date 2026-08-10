@@ -145,6 +145,7 @@ Fase 3 — Competencia (independiente, no produce videos):
 - `config.yaml` — toda la configuración
 - `.env` — OPENROUTER_API_KEY, YOUTUBE_API_KEY
 - `data/` — state de competencia, informes y consejos (generado, no versionado)
+- `seeds/` — seeds de handoff a sesión fresca. **PASO 0 de cada uno: `/seed-review`**
 - `assets/3.png` — plantilla miniatura/intro (PNG transparente)
 - `assets/stereogenicstudio-swish-swoosh-woosh-sfx-27-357164.mp3` — woosh sound
 - `assets/.tint_index` — rotación de color para miniaturas (golden angle)
@@ -481,15 +482,25 @@ Hay TRES causas distintas y solo una es inevitable:
       bajado. No hace falta procesar el gameplay de 13 GB para validar la cadena
 - Destapó el bug del demuxer `concat` (ver arriba), que llevaba desde siempre roto
 
-### Futuro
-- [x] Longitud de frase: NO hace falta partirla. Ver "Longitud de frase" abajo — medido,
-      las frases largas no degradan el sincronismo una vez las comas se insertan en código
-- [ ] **SIN VALIDAR**: que `target_wpm: 195` (antes 150) haga que el vídeo dure lo mismo
-      que el chunk de gameplay. Medir: duración del vídeo / duración del chunk ~= 1.0
-- [ ] Producción real de 30 min de punta a punta (la cadena está validada; falta
-      el volumen). Ojo al rate-limit del tier gratuito: `Worker local total request
-      limit reached (32/32)` salta a menudo; por eso `max_retries: 5`
-- [ ] Las directrices de competencia solo se inyectan en `reddit_story.txt`;
-      `short_story.txt` NO las recibe, así que los shorts ignoran el análisis
-- [ ] `st.components.v1.html` (diagrama del Roadmap) está deprecado desde 2026-06-01;
-      migrar a la API nueva antes de que Streamlit lo retire
+### Lo que falta para que el pipeline esté FINALIZADO
+
+La cadena de producción está completa y validada. Lo que queda tiene su seed escrita en
+`seeds/` (cada una con `/seed-review` como paso 0). Orden recomendado: 1 → 2 → 3.
+
+| # | Seed | Qué cierra |
+|---|---|---|
+| 1 | `SEED_1_cierre_funcional.md` | Directrices de competencia en `short_story.txt` (hoy solo llegan a `reddit_story.txt`, así que los shorts ignoran el análisis) · escaneo de competencia programado (hoy solo manual) · `st.components.v1.html` deprecado desde 2026-06-01 |
+| 2 | `SEED_2_subida_youtube.md` | **La subida a YouTube**: el pipeline se para en `output/` y el usuario sube a mano. Es el último paso para cumplir el objetivo "autónomo". Necesita OAuth y decisiones del usuario. `videos.insert` cuesta 1.600 unidades de las 10.000 diarias, compartidas con el análisis de competencia |
+| 3 | `SEED_3_produccion_30min.md` | Validación de volumen: 30 min reales con ~30 shorts. A esa escala entran por primera vez el encadenado de 4-6 bloques, el troceo de edge-tts en ~7 trozos y la lista anti-repetición más allá de sus 12 títulos |
+
+**Calidad, no bloquean** (una por día: se comen la cuota de OpenRouter):
+
+| # | Seed | Qué hace |
+|---|---|---|
+| 4 | `SEED_4_validar_cambios.md` | 6 agentes en paralelo retando con datos los parámetros elegidos (anclaje, umbrales de comas, `target_wpm`, validación de salida, anti-repetición a N=30, scoring de competencia) |
+| 5 | `SEED_5_caza_bugs.md` | Revisión de bugs del pipeline y del dashboard, con las clases de fallo ya vistas aquí como guía |
+
+**No paralelizar a la ligera**: la 3 monopoliza GPU y `pool/`/`output/`; la 4 y la 5 compiten
+por las 1000 peticiones/día de OpenRouter; la 1 y la 2 chocan en `dashboard.py`, `main.py` y
+`config.yaml`. Y el contador de cuota de YouTube vive en `data/competitors.json`: dos procesos
+escribiéndolo a la vez pierden actualizaciones y el corte preventivo deja de proteger.
