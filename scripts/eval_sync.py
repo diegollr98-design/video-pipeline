@@ -65,7 +65,12 @@ def _ass_time_a_segundos(t):
 
 
 def lee_ass(path):
-    """Devuelve [(palabra, start_segundos)] en orden de aparición."""
+    """Devuelve [(palabra, start_segundos, end_segundos)] en orden de aparición.
+
+    El `end` hace falta para medir HUECOS: comparar el start de un cue con el
+    start del siguiente mide la DURACIÓN de la palabra, no el silencio que la
+    sigue. (Ese error daba 73 "pausas fuera de puntuación" falsas.)
+    """
     palabras = []
     with open(path, encoding="utf-8-sig") as f:
         for linea in f:
@@ -73,12 +78,13 @@ def lee_ass(path):
             if not m:
                 continue
             start = _ass_time_a_segundos(m.group(1))
+            end = _ass_time_a_segundos(m.group(2))
             texto = m.group(3)
             texto = re.sub(r"\{[^}]*\}", "", texto)       # tags de override
             texto = texto.replace("\\N", " ").replace("\\n", " ")
             for w in texto.split():
                 if _normaliza(w):
-                    palabras.append((w, start))
+                    palabras.append((w, start, end))
     return palabras
 
 
@@ -112,7 +118,7 @@ def transcribe(wav_path, model_size="small"):
 
 # ---------------------------------------------------------------- emparejado
 def empareja(ass_words, whisper_words):
-    a = [_normaliza(w) for w, _ in ass_words]
+    a = [_normaliza(w[0]) for w in ass_words]
     b = [_normaliza(w) for w, _ in whisper_words]
     sm = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
     pares = []
@@ -126,14 +132,18 @@ def empareja(ass_words, whisper_words):
 
 # ---------------------------------------------------------------- pausas del ASS
 def pausas_fuera_de_puntuacion(ass_path, umbral=0.35):
-    """Huecos > umbral entre cues consecutivos cuya palabra previa NO acaba en
-    puntuación. Es una comprobación estructural sobre el .ass, sin audio."""
+    """HUECOS > umbral (fin de un cue -> inicio del siguiente) cuya palabra previa
+    NO acaba en puntuación. Comprobación estructural sobre el .ass, sin audio.
+
+    El hueco es `siguiente.start - previa.end`. Usar `siguiente.start -
+    previa.start` mide la duración de la palabra y no un silencio.
+    """
     palabras = lee_ass(ass_path)
     fuera = []
-    for (w_prev, t_prev), (w_sig, t_sig) in zip(palabras, palabras[1:]):
-        hueco = t_sig - t_prev
+    for (w_prev, _, e_prev), (w_sig, s_sig, _) in zip(palabras, palabras[1:]):
+        hueco = s_sig - e_prev
         if hueco > umbral and not w_prev.rstrip().endswith((",", ".", ";", ":", "!", "?", "…")):
-            fuera.append({"tras": w_prev, "hueco": round(hueco, 3), "t": round(t_prev, 2)})
+            fuera.append({"tras": w_prev, "hueco": round(hueco, 3), "t": round(e_prev, 2)})
     return fuera
 
 

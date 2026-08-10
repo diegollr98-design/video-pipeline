@@ -288,6 +288,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Solo genera historia, sin audio ni video")
     parser.add_argument("--config", default="config.yaml", help="Ruta al archivo de configuración")
     parser.add_argument("--skip-ingest", action="store_true", help="No ingestar nuevos videos, solo producir del pool")
+    parser.add_argument("--keep-temp", action="store_true",
+                        help="No borrar temp/ al terminar. Necesario para /eval: el .ass y el "
+                             "_story.txt son lo que se mide, y cleanup_temp los destruía")
     parser.add_argument("--no-shorts", action="store_true",
                         help="Desactiva la generación de shorts en esta corrida")
     parser.add_argument("--scan-competition", action="store_true",
@@ -393,7 +396,14 @@ def main():
         logger.info(f"Sobrante en pool: {total_pool:.0f}s ({total_pool/60:.1f} min) — se usará en la próxima ejecución")
 
     # Cleanup temp (but not pool!)
-    if not args.dry_run and success > 0:
+    #
+    # --keep-temp existe porque el gate /eval MIDE sobre estos artefactos: el
+    # .ass es la entrada de scripts/eval_sync.py y el _story.txt es lo único que
+    # permite auditar las comas a posteriori. Borrarlos al terminar dejaba al
+    # gate sin nada que medir, y ninguna corrida de producción era auditable.
+    if args.keep_temp:
+        logger.info(f"Temporales CONSERVADOS en {config['paths']['temp_dir']} (--keep-temp)")
+    elif not args.dry_run and success > 0:
         cleanup_temp(config)
         logger.info("Archivos temporales limpiados")
 
