@@ -133,6 +133,13 @@ VEREDICTO: <PASA | BLOQUEA>
 pausas fuera de puntuación, dos shorts comparten argumento, falta un artefacto, o la geometría de
 subtítulos no cuadra.
 
+⚠️ **PASA significa "no he detectado regresión en 3 min", NO "vídeo publicable".** Este gate dio verde
+al vídeo de producción del 10-ago-2026, que tenía basura del modelo en pantalla y 4 tramos ~1 s por
+detrás de la voz [ANCLA-01] [BASURA-01]. El fixture tiene **12 ventanas de anclaje y 1 bloque de
+historia**; la producción, **214 y 3+**. Al reportar PASA en una superficie sensible con cola larga
+(anclaje, encadenado de bloques, anti-repetición de shorts), **di también qué queda sin cubrir**
+(`produccion-loop.md` §C).
+
 ### 6. Guardar
 
 Escribe el resultado en `data/eval/<fecha>.json` — es el baseline del próximo run.

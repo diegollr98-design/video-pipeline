@@ -59,7 +59,8 @@ hecho.
 4. **Si tocaste algo que comparten los shorts → genera shorts.** `--no-shorts` oculta una clase entera
    de fallos.
 5. **Si tocaste `_call_openrouter`, los prompts o `shorts_generator` → reporta las peticiones por
-   vídeo**, aunque nadie lo pregunte (tope de 50/día en el tier free).
+   vídeo**, aunque nadie lo pregunte. El tope diario del tier free se **verifica con la API**, no se
+   cita de memoria (`decision-making.md` §15).
 6. Superficie sensible → pásalo por `output-audit`. **El self-review es el modo de fallo documentado.**
 7. `git commit -m "fix ..."`.
 

@@ -36,7 +36,7 @@ input/ pool/ temp/ output/ shorts_tiktok/   ← media (gitignored, NUNCA se borr
 **Reglas:**
 - **Toda llamada a OpenRouter pasa por `_call_openrouter`** (`script_generator.py`). Es la costura donde
   viven los reintentos, el guardia del 200-sin-`choices` y el `max_tokens`. Nada la saltea — si se
-  saltea, el conteo de peticiones contra el tope de 50/día deja de significar nada.
+  saltea, el conteo de peticiones contra el tope diario deja de significar nada.
 - **Toda ruta de FFmpeg/ffprobe pasa por `utils.py`.** Y toda ruta que se escriba en un fichero de
   lista de `concat` es **absoluta** (el demuxer las resuelve respecto al directorio del fichero).
 - `dashboard.py` **solo renderiza**; el pipeline se lanza como **subproceso** vía `dashboard_runner.py`,

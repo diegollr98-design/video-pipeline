@@ -27,7 +27,7 @@ Diego pregunta/propone POCO; cuando lo hace es señal de ALTA prioridad y suele 
 
 El modo de fallo de este proyecto **no** es que el pipeline pete: es que produzca un vídeo **que parece terminado** y esté roto de una forma que nadie ve — subtítulos por detrás de la voz, 4 shorts con la misma historia, media grabación descartada en la ingesta. **Nadie mira los 30 minutos de salida**: por eso un defecto silencioso se sube a YouTube tal cual.
 
-Los cuatro bugs graves de este repo produjeron **vídeos completos y reproducibles**. Lo que los delató fue **medir**.
+Todos los bugs graves de este repo produjeron **vídeos completos y reproducibles**. Lo que los delató fue **medir** — y la primera corrida a escala real (10-ago-2026) salió **no publicable con el gate en verde**, así que medir en el régimen equivocado tampoco basta (`produccion-loop.md` §C).
 
 - **Loop de Producción** (`.claude/rules/produccion-loop.md`) — cómo impedimos que salga un vídeo roto. Es el loop central.
 - **Loop de Cambios** (`.claude/rules/change-loop.md`) — protocolo ante cualquier cambio.
@@ -383,17 +383,9 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
 - Referencia por si algún día se compra crédito: modelos de pago baratos cuestan ~0,001-0,003 USD por vídeo (30k tokens de salida) y no tienen tope diario
 
 ### Longitud de frase y comas (medido ago 2026)
-Se puede eliminar la pausa "inventada" a mitad de frase escribiendo mejor el texto:
-
-| Variante | Pausas inesperadas | Ventana de anclaje | pal/min |
-|---|---|---|---|
-| Frase larga (49 pal) SIN comas | 2 | 50 palabras | 207 |
-| Frase larga CON comas | 0 | 50 palabras | 204 |
-| Frases cortas (12-16 pal) | 0 | 12 palabras | **172** |
-| **Frases medias (20-25 pal) + comas** | **0** | **22 palabras** | **198** |
-
+Se puede eliminar la pausa "inventada" a mitad de frase escribiendo mejor el texto. **Tablas crudas del barrido: `docs/mediciones-frases.md`.**
 - Con comas bien puestas, edge-tts pausa EN la coma en vez de inventarse el sitio
-- Las frases muy cortas también funcionan pero la pausa en punto es de **1,1-1,3s** (vs 0,3-0,6s en coma): narración entrecortada y **19% más de duración**, ~4 min de silencio extra en un vídeo de 30 min
+- Las frases muy cortas también lo evitan, pero la pausa en punto es de **1,1-1,3s** (vs 0,3-0,6s en coma): narración entrecortada y **19% más de duración**, ~4 min de silencio extra en un vídeo de 30 min
 - Ganador: frases de 15-25 palabras con una coma cada 8-12. Bonus: la ventana de anclaje baja de 50 a 22 palabras, así que el sincronismo de subtítulos también mejora
 
 ### Las comas NO se le pueden pedir al modelo: se imponen en código
@@ -404,24 +396,11 @@ Se puede eliminar la pausa "inventada" a mitad de frase escribiendo mejor el tex
 - La regla sigue también en los prompts: no basta, pero sube la probabilidad del modo bueno y no cuesta nada
 
 ### Longitud de frase: distribución real y por qué NO hay que partirlas
-Muestra de 10 historias generadas (417 frases, 16.048 palabras):
-
-| Longitud | % frases | % palabras |
-|---|---|---|
-| ≤25 palabras | 18,0% | 9,3% |
-| 26-40 | 44,1% | 37,5% |
-| 41-60 | 28,3% | 35,2% |
-| 61-100 | 9,4% | 17,4% |
-| >100 | 0,2% | 0,7% |
-
-- Mediana 36 palabras, percentil 90 en 60, máximo observado 105. Una frase de >100 palabras sale ~1 vez cada 10 historias
+Muestra de 10 historias (417 frases, 16.048 palabras; **distribución completa en `docs/mediciones-frases.md`**). Mediana 36 palabras, percentil 90 en 60, máximo 105; una frase de >100 sale ~1 vez cada 10 historias.
 - **No degradan el sincronismo**: con contenido real, una frase de 95 palabras da 0,19-0,21s de error máximo (estable en 3 repeticiones), igual o mejor que una de 25. El anclaje por traslación aguanta ventanas largas
 - Con `_ensure_breathing_commas` activo, 0 de 10 historias salieron sin comas (antes 2 de 4), así que el problema real de las frases largas —las pausas inventadas— ya está resuelto aguas abajo
 
-### Trampa al medir sincronismo: NO usar texto repetido como fixture
-- Un test que construía la frase larga repitiendo 4 veces el mismo párrafo daba 2,525s de error máximo, **exactamente el mismo valor** en 3 de 5 repeticiones, y solo emparejaba 112/132 palabras
-- No era desfase real: con frases repetidas, el emparejador (difflib contra una transcripción independiente) engancha la copia equivocada. Un valor idéntico entre corridas es la señal de que el artefacto es del test, no del audio
-- Los fixtures de sincronismo deben tener **contenido no repetido**
+> Las **trampas de medición** (fixture con texto repetido, emparejado global, métricas no calibradas) están en `.claude/rules/produccion-loop.md` §D, que es donde se consultan al medir. No se duplican aquí.
 
 ### Pausas a mitad de frase (medido ago 2026)
 Hay TRES causas distintas y solo una es inevitable:
@@ -475,33 +454,46 @@ Hay TRES causas distintas y solo una es inevitable:
 - [x] Debate LLM: veredicto argumentado + directrices + titulares de ejemplo
 - [x] Inyección reversible en el prompt de historias, con el OK del usuario
 
-### Validación E2E (ago 2026) — COMPLETA
-- Corrida real con clip de 3 min: ingesta (hotbar 18/18) -> pool (1120MB -> 296MB) ->
-      historia -> TTS -> forced alignment (anclas duras 9/9) -> ASS -> intro -> composición
-      -> miniatura -> 3 shorts. Salida verificada FOTOGRAMA A FOTOGRAMA
-- Reproducible: clip corto en un `input_dir` propio + config con `target_duration_min`
-      bajado. No hace falta procesar el gameplay de 13 GB para validar la cadena
-- Destapó el bug del demuxer `concat` (ver arriba), que llevaba desde siempre roto
+### Validación E2E — dos escalas, dos veredictos DISTINTOS
+
+**Fixture de 3 min (ago 2026) — ✅ pasa.** Ingesta (hotbar 18/18) -> pool (1120MB -> 296MB) ->
+historia -> TTS -> forced alignment (anclas duras 9/9) -> ASS -> intro -> composición ->
+miniatura -> 3 shorts. Verificado FOTOGRAMA A FOTOGRAMA. Reproducible con un clip corto en su
+propio `input_dir`: no hace falta procesar los 13 GB. Destapó el bug del demuxer `concat`.
+
+**Producción real de 30 min (10-ago-2026) — 🔴 vídeo NO publicable, con el gate en VERDE.**
+33,4 min de gameplay -> vídeo de 29,85 min + 50 shorts, 53 peticiones, ~2h40 de reloj. Dos
+defectos que el fixture de 3 min **no puede ver** (`produccion-loop.md` §C):
+- **basura del modelo narrada y subtitulada** en el minuto 15:38-15:47 → arreglado con
+  `_detectar_basura` (los guardias solo miraban la cabecera) [BASURA-01]
+- **4 ventanas de anclaje con frases enteras ~1 s por detrás de la voz** (zona 1000-1040 s:
+  **+1,050 s**, 90 de 125 palabras >0,5 s; control 300-340 s: −0,110 s) [ANCLA-01]
+
+> ⚠️ **[ANCLA-01] SIGUE VIVO.** Causa raíz localizada y validada por ejecución —
+> `tts_engine.py:458` traslada toda la ventana de anclaje usando UNA sola palabra, así que un
+> silencio mal alineado se convierte en retraso rígido para las ~95 siguientes. **Fix propuesto,
+> NO aplicado.** Cualquier vídeo largo que se genere hoy arrastra esto. Y `shorts_generator.py:295`
+> llama a la misma función: en un short de 1-3 ventanas, la mala deja el short entero por detrás.
 
 ### Lo que falta para que el pipeline esté FINALIZADO
 
-La cadena de producción está completa y validada. Lo que queda tiene su seed escrita en
-`seeds/` (cada una con `/seed-review` como paso 0). Orden recomendado: 1 → 2 → 3.
+La cadena corre de punta a punta, pero **la única corrida a escala real salió no publicable**.
+Cada seed lleva `/seed-review` como paso 0. Orden recomendado: 0 → 1 → 2.
 
 | # | Seed | Qué cierra |
 |---|---|---|
+| **0** | **`SEED_sincronismo_produccion.md`** | **BLOQUEANTE.** Arreglar el medidor (`eval_sync.py` empareja con `difflib` global y fabrica retraso [INSTR-02]), aplicar y verificar el fix de [ANCLA-01], `target_wpm` (n=2: 160,6 y 177,2), variedad de los 50 shorts, y qué hacer con un gate que no cubre producción |
 | 1 | `SEED_1_cierre_funcional.md` | Directrices de competencia en `short_story.txt` (hoy solo llegan a `reddit_story.txt`, así que los shorts ignoran el análisis) · escaneo de competencia programado (hoy solo manual) · `st.components.v1.html` deprecado desde 2026-06-01 |
 | 2 | `SEED_2_subida_youtube.md` | **La subida a YouTube**: el pipeline se para en `output/` y el usuario sube a mano. Es el último paso para cumplir el objetivo "autónomo". Necesita OAuth y decisiones del usuario. `videos.insert` cuesta 1.600 unidades de las 10.000 diarias, compartidas con el análisis de competencia |
-| 3 | `SEED_3_produccion_30min.md` | Validación de volumen: 30 min reales con ~30 shorts. A esa escala entran por primera vez el encadenado de 4-6 bloques, el troceo de edge-tts en ~7 trozos y la lista anti-repetición más allá de sus 12 títulos |
+| 5 | `SEED_5_caza_bugs.md` | Calidad, no bloquea. Revisión de bugs del pipeline y del dashboard, con las clases de fallo ya vistas aquí como guía |
 
-**Calidad, no bloquean** (una por día: se comen la cuota de OpenRouter):
+**Ya ejecutadas** (no volver a lanzarlas): `SEED_3_produccion_30min.md` (10-ago → es la corrida de
+arriba) y `SEED_validar_cambios.md` **v2** (10-ago, ver `sessions-log.md` v0.2).
+⚠️ `SEED_4_validar_cambios.md` es la **v1 de esa misma seed, que un panel adversarial TUMBÓ**
+(4 de 6 bloques sin instrumento válido, el paralelismo corrompía las mediciones). Está marcada como
+superada: no la ejecutes.
 
-| # | Seed | Qué hace |
-|---|---|---|
-| 4 | `SEED_4_validar_cambios.md` | 6 agentes en paralelo retando con datos los parámetros elegidos (anclaje, umbrales de comas, `target_wpm`, validación de salida, anti-repetición a N=30, scoring de competencia) |
-| 5 | `SEED_5_caza_bugs.md` | Revisión de bugs del pipeline y del dashboard, con las clases de fallo ya vistas aquí como guía |
-
-**No paralelizar a la ligera**: la 3 monopoliza GPU y `pool/`/`output/`; la 4 y la 5 compiten
-por las 1000 peticiones/día de OpenRouter; la 1 y la 2 chocan en `dashboard.py`, `main.py` y
-`config.yaml`. Y el contador de cuota de YouTube vive en `data/competitors.json`: dos procesos
-escribiéndolo a la vez pierden actualizaciones y el corte preventivo deja de proteger.
+**No paralelizar a la ligera**: la 0 monopoliza GPU, `pool/` y `output/`; la 0 y la 5 compiten por la
+cuota de OpenRouter; la 1 y la 2 chocan en `dashboard.py`, `main.py` y `config.yaml`. Y el contador de
+cuota de YouTube vive en `data/competitors.json`: dos procesos escribiéndolo a la vez pierden
+actualizaciones y el corte preventivo deja de proteger. **Disco al 97%** tras la corrida larga.

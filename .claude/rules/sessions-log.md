@@ -14,6 +14,27 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.4 — 2026-08-10 — `/optimize`: 4 clases del ledger promovidas a regla ✅
+**Qué se hizo:** Primer `/optimize` desde el 05-ago (9 commits de por medio). Promovidas 4 clases:
+**instrumento no calibrado** (SYNC-01+INSTR-01+INSTR-02, n=3) → `produccion-loop.md` §D regla madre;
+**régimen de validación equivocado** (ANCLA-01+BASURA-01+WPM-01, n=3) → `produccion-loop.md` §C "el
+techo del gate"; **fix no propagado al gemelo** (PATH-02+LOG-02, n=2) → `decision-making.md` §11 con
+tabla de pares + grep obligatorio; **guardia existente pero no aplicado** (GUARD-01+BASURA-01) → §17
+2.º corolario. `SEED_4_validar_cambios.md` marcada ⛔ SUPERADA (era la v1 que un panel tumbó y seguía
+ejecutable). Tablas de barrido movidas a `docs/mediciones-frases.md`; v0.1 archivada.
+**Incidentes:** ninguno nuevo — sesión de config.
+**Verificación:** [DOC-01] seguía **VIVO en 6 ficheros** (`decision-making`, `change-loop`,
+`file-organization`, `produccion-loop`, `engineer`, `daily-run`, `run`) meses después de corregirse en
+`CLAUDE.md`: `grep -rn "tope de 50"` → 0 falsos restantes tras el fix. `decision-making.md:7` afirmaba
+"no se auto-carga" siendo falso (los 5 rules están en contexto): corregido. Modelo de producción
+verificado VIVO contra `GET /api/v1/models` (399 modelos; `nvidia/nemotron-3-ultra-550b-a55b:free`
+presente, `google/gemini-2.0-flash-001` ausente). `CLAUDE.md` decía "cadena completa y validada" y
+listaba la producción de 30 min como pendiente **cuando ya se había corrido y salido no publicable**.
+**Pendiente:** [ANCLA-01] **sigue vivo** en `tts_engine.py:458` — `SEED_sincronismo_produccion.md` es
+ahora la seed nº 0 (bloqueante). Contexto auto-cargado: **935 → 1009 líneas** (+74 neto: ~+95 de
+reglas nuevas, −21 de compresión). El `/optimize` de hoy **no ahorró tokens, los gastó**: es el precio
+de 4 promociones. El próximo debería ser de poda.
+
 ## v0.3 — 2026-08-10 — Primera producción real de 30 min: destapó un vídeo no publicable 🔴
 **Qué se hizo:** Corrida completa a escala real (33,4 min de gameplay → vídeo de 29,85 min + 50
 shorts, 53 peticiones, ~2h40). Antes: baseline de `/eval` fijado sobre el fixture de 3 min y
@@ -57,19 +78,4 @@ recibir las directrices de competencia. (4) Bloques A/E/F declarados NO medibles
 instrumental actual (referí circular, proxy que no discrimina, supervivencia de la muestra):
 lo accionable es que el próximo escaneo persista el corpus `fresh`.
 
-## v0.1 — 2026-08-05 — Config de Claude Code importada del resto de repos ✅
-**Qué se hizo:** El proyecto tenía un `CLAUDE.md` técnico excelente (359 líneas de decisiones medidas)
-pero **cero capa operativa**: sin `rules/`, sin `agents/`, sin `skills/`, con un `settings.json` de 8
-líneas sin `deny` (y `.env` con dos API keys legible), sin git y con el ledger vacío. Importado desde
-`Resellermaster` (el más maduro), `escoltaeliteapp`, `pumpfun-bot` y `ecxm-ops`, re-anclado a los
-episodios REALES de este repo: `settings.json` con deny + hook `compileall` en `PostToolUse`;
-`rules/` (decision-making, produccion-loop, change-loop, file-organization, sessions-log);
-`agents/` (engineer, bug-hunter, output-audit); `skills/` (`/eval`, `/run`, `/daily-run`);
-capa operativa al inicio de `CLAUDE.md`; `git init`.
-**Incidentes:** ninguno — sesión de config, no toca código de producto.
-**Verificación:** ver el cierre de la sesión. `/eval` **aún no tiene baseline**: la primera corrida
-establece la línea base y no puede aprobar ni bloquear nada.
-**Pendiente:** (1) correr `/eval` una vez para fijar el baseline — hasta entonces el gate no tiene
-dientes. (2) Los dos TODO abiertos de `CLAUDE.md` siguen: validar `target_wpm: 195` (ratio
-duración-vídeo/chunk ≈ 1.0) y la producción real de 30 min. (3) `short_story.txt` no recibe las
-directrices de competencia.
+<!-- entradas anteriores archivadas en docs/sessions-log-archive.md (v0.1) -->

@@ -45,7 +45,7 @@ El gate lo fija **qué costura se toca**, no cuántas líneas cambian.
 | **ingesta** | `video_cleaner.py`, `gameplay_pool.py` | un fallo aquí tira horas de gameplay y aborta la corrida entera |
 | **historia** | `script_generator.py`, `prompts/*.txt` | el título forzado y la variedad de shorts son garantías impuestas en código (`decision-making.md` §17) |
 | **composición** | `video_composer.py`, `subtitle_builder.py`, `shorts_generator.py` | PlayRes, posición, offset de audio y timing de la intro; los shorts son el gemelo que nadie mira |
-| **cuota** | `_call_openrouter`, `competitor_scout.py` | 50 peticiones/día (OpenRouter free) y 10.000 unidades/día (YouTube API) son topes DUROS |
+| **cuota** | `_call_openrouter`, `competitor_scout.py` | el tope diario de OpenRouter free y las 10.000 unidades/día de la YouTube API son topes DUROS (el valor, con la API: `decision-making.md` §15) |
 
 **Superficie única no sensible** → ceremonia mínima (leer, cambiar, comprobar que compila, decirlo):
 copy del dashboard, un color de miniatura, un texto de log, una pestaña de Streamlit.
@@ -72,6 +72,26 @@ gate, sus métricas y su veredicto: `.claude/skills/eval/SKILL.md`.
 **Gate con dientes:** un cambio en superficie sensible **no se cierra** si `/eval` empeora respecto al
 baseline. No es un aviso: es un no.
 
+**Y su techo, que es tan importante como sus dientes: `/eval` verde NO significa "vídeo publicable"**
+[ANCLA-01] [BASURA-01] [WPM-01]. El fixture son 3 min; la producción son 30. La primera corrida real
+(10-ago-2026) salió **no publicable** con el gate en verde:
+
+| Fallo real | Por qué el fixture no puede verlo |
+|---|---|
+| 4 ventanas de anclaje ~1 s por detrás de la voz | a 3 min hay **12 ventanas**; en producción **214**. El bug vive en la cola de la distribución |
+| basura del modelo narrada y subtitulada (min 15:38) | requiere una historia de 3+ bloques; el fixture genera **1** |
+| `target_wpm` mal calibrado (ratio 0,893) | a 3 min manda `_truncate_to_words` y **tapa** la velocidad real del modelo |
+
+**La regla que sale de ahí: antes de calibrar una constante o dar por validado un guardia, di en qué
+RÉGIMEN lo estás midiendo y si es el de producción.** Un parámetro calibrado en el régimen equivocado
+no es un parámetro aproximado — es un parámetro medido con la variable dominante tapada. `target_wpm`
+lleva **cuatro** valores (150 → 195 → 160 → ?) y las dos primeras calibraciones fueron régimen
+equivocado o n=1.
+
+Corolario operativo: para superficies sensibles con cola larga (anclaje, encadenado de bloques,
+anti-repetición de shorts), `/eval` es condición **necesaria y no suficiente**. Lo que falte cubrir se
+dice explícitamente al cerrar, en vez de dejar que el verde lo sugiera.
+
 ### Capa 2 — `output-audit` (agéntico, adversarial)
 Subagente Opus, autocontenido, cuyo trabajo es **intentar demostrar que el vídeo está roto**, midiendo
 los artefactos (ASS, WAV, MP4, títulos) — no viéndolo. Default escéptico: si no puede probar que una
@@ -92,6 +112,28 @@ así que **todo lo que sea medible debe medirse antes**, para que él mire solo 
 
 ## §D — Trampas de medición ya conocidas (no las repitas)
 
+> **REGLA MADRE DE ESTA SECCIÓN — calibra el instrumento contra un caso de resultado CONOCIDO antes
+> de juzgar nada con él** [SYNC-01] [INSTR-01] [INSTR-02]. En una sola sesión (10-ago-2026) **tres**
+> instrumentos propios dieron números falsos; los tres eran plausibles y ninguno se había contrastado.
+> Como este repo cierra cambios "por medición", **un instrumento roto no da un error: da un veredicto
+> equivocado con aspecto de evidencia**, y es más caro que no medir.
+>
+> Las tres firmas, por si reaparecen:
+> - **La variable manipulada en el denominador.** `exceso = nº silencios − nº signos` para comparar dos
+>   versiones del inserter de comas penaliza sola a la que inserta menos comas: dijo "5 vs 10 pausas
+>   inventadas" donde los silencios crudos eran **30 vs 31** (indistinguibles). Casi cierra un cambio
+>   bueno como regresión.
+> - **Medir otra magnitud que la que crees.** Hueco entre subtítulos como `siguiente.start −
+>   previa.start` es la **duración de la palabra**, no el silencio: reportó **73** pausas fuera de
+>   puntuación donde había **1**.
+> - **Emparejado global sobre texto que se repite.** `difflib` sobre 5000+ palabras engancha
+>   ocurrencias lejanas y **fabrica retraso inexistente**: 3 zonas falsas positivas, media global
+>   inflada de 0,072 a 0,153 s y sesgo volteado.
+>
+> Dos test baratos antes de fiarte de una métrica: (1) pásala por un tramo cuyo valor ya conoces;
+> (2) **desconfía del número que sale justo en la dirección que esperabas** — y de un valor idéntico
+> entre corridas, que es firma de artefacto, no de estabilidad.
+
 1. **Fixture con texto repetido = medición falsa.** Repetir un párrafo para construir una frase larga
    hace que el emparejador enganche la copia equivocada: 2,525s de error "medido", **idéntico** en 3 de
    5 repeticiones. Un valor idéntico entre corridas es la firma del artefacto. Los fixtures de
@@ -101,6 +143,9 @@ así que **todo lo que sea medible debe medirse antes**, para que él mire solo 
    cambio de composición.
 4. **Confundir `/api/v1/key` con `/api/v1/credits`** en OpenRouter: el primero da el tope de gasto
    configurado en la clave, **no el saldo**. Ya llevó a creer que había dinero cuando no lo había.
+5. **Sin `--keep-temp` no hay nada que medir**: `cleanup_temp` borra `temp/` al terminar bien, y ahí
+   viven el `.ass` y el `_story.txt` que son justo lo que se mide [GATE-01]. Obligatorio en cualquier
+   corrida que vayas a auditar — incluidas las de producción, que antes no eran auditables a posteriori.
 
 ## §E — Retro y meta-mejora (cómo este loop se mejora sin derivar)
 

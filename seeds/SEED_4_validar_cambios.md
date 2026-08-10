@@ -1,6 +1,16 @@
 # SEED — Validar en paralelo que los últimos cambios son óptimos
 
-> PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
+> # ⛔ SUPERADA — NO EJECUTAR. Se conserva solo como registro.
+>
+> Esta es la **v1**. El 10-ago-2026 `/seed-review` (TIER PANEL: 1 agente ciego + 3 críticos) la
+> **tumbó**: 4 de sus 6 bloques no tenían instrumento de medición válido, el paralelismo que pide
+> corrompía las mediciones (`pipeline.log` es ruta fija, `cleanup_temp` hace `rmtree` del temp
+> compartido) y su "no aplicar cambios" era incompatible con barrer constantes de módulo.
+>
+> **La versión válida, ya reescrita y ya ejecutada, es `SEED_validar_cambios.md` (v2).**
+> Lo que salió de ejecutarla está en `.claude/rules/sessions-log.md` v0.2.
+>
+> PASO 0 OBLIGATORIO (si alguna vez se resucita): invoca /seed-review antes de tocar nada.
 
 ## Qué es esto
 

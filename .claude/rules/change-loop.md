@@ -30,7 +30,8 @@ cruce una costura sensible.
 4. **Si tocaste algo que los shorts comparten → genera shorts.** Correr con `--no-shorts` oculta una
    clase entera de fallos (precedente: los 4 shorts con la misma historia).
 5. **Si tocaste `_call_openrouter`, los prompts o `shorts_generator` → recalcula y reporta las
-   peticiones por vídeo**, aunque nadie lo pregunte. El tope de 50/día es el cuello de botella real.
+   peticiones por vídeo**, aunque nadie lo pregunte. El tope diario es real, pero **su valor se
+   verifica con la API, no se lee de un `.md`** (`decision-making.md` §15).
 6. **Superficie sensible → pásalo por `output-audit`.** El self-review es el modo de fallo documentado.
 7. `git commit -m "fix ..."`.
 

@@ -15,25 +15,28 @@ tampoco. Produce archivos y te dice qué salió.
 
 ---
 
-## Por qué existe: el cuello de botella NO es el tiempo, es la cuota
+## Por qué existe: el cuello de botella es la cuota Y el reloj
 
 Los modelos `:free` de OpenRouter tienen un tope de **peticiones al día**, no solo de rate:
-**50/día** con menos de 10 créditos comprados (1000/día a partir de 10). El error es
+**50/día** con menos de 10 créditos comprados, **1000/día a partir de 10**. El error es
 `429 Rate limit exceeded: free-models-per-day`.
 
-**Estado de la cuenta (ago 2026): 0 créditos comprados, saldo −0,06 USD.** Sin crédito no hay modelos
-de pago: la única vía es el tier gratuito con su tope de 50.
+**El estado de la cuenta caduca: verifícalo, no lo leas de aquí** (`GET /api/v1/credits`; ver el aviso
+de `/api/v1/key` más abajo). Última verificación: **10 créditos, 1000/día, 10-ago-2026** — con eso
+caben ~20 vídeos/día. Este apartado dijo "0 créditos, tope de 50" cuando ya era falso [DOC-01].
 
-Y el reparto del gasto es muy asimétrico:
+Reparto del gasto, medido en la producción real de 30 min (10-ago-2026, **53 peticiones**):
 
 | Concepto | Peticiones |
 |---|---|
-| Historia de un vídeo de 30 min | 3-4 (un bloque ≈ 2000 palabras) |
-| **Shorts** | **1 por short** — y salen ~30 de un chunk de 30 min |
+| Historia de un vídeo de 30 min | 3 bloques (un bloque ≈ 2000 palabras) |
+| **Shorts** | **1 por short** — salieron **50** de un chunk de 33 min |
 | Escaneo de competencia + debate | 5-15 |
 
-**Los shorts son los que se comen el día.** La decisión principal de este loop es *cuántos shorts
-caben hoy*, no *si producir*.
+**Los shorts son los que se comen el día.** Pero con 1000/día la cuota dejó de ser el cuello de
+botella: esa corrida tardó **~2h40 de reloj** (23 min ingesta + ~20 min vídeo + ~95 min los 50 shorts)
+y el disco quedó al 97%. La decisión principal de este loop es *cuántos shorts caben hoy* — hoy por
+**tiempo y disco** antes que por cuota.
 
 ⚠️ **Los reintentos cuentan.** `max_retries: 5` significa que un bloque que falla puede quemar 5
 peticiones. Toda estimación de aquí asume cero reintentos: es un **suelo**, no una predicción.
@@ -53,8 +56,8 @@ grep -c "OpenRouter: reintento" pipeline.log # reintentos (cada uno es una petic
 Suma los shorts producidos hoy (`ls shorts_tiktok/*.mp4` con fecha de hoy) — 1 petición cada uno.
 
 **b) Sonda definitiva.** Si la estimación deja duda, una sola petición mínima al modelo free resuelve:
-un `429` con `free-models-per-day` significa que el día está agotado. Cuesta 1 petición (2% del tope)
-y es la única señal certera.
+un `429` con `free-models-per-day` significa que el día está agotado. Cuesta 1 petición y es la única
+señal certera del **contador diario** (que no lo da ningún endpoint).
 
 ⚠️ **NO uses `/api/v1/key` para esto.** Devuelve `limit`/`limit_remaining`, que son el **tope de gasto
 configurado en la clave**, NO el saldo ni el contador diario. Confundirlos ya llevó a creer que había

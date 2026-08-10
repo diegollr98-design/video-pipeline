@@ -4,7 +4,9 @@
 > a base de incidentes) y **re-anclado a los episodios REALES de este repo**, que están documentados
 > en `CLAUDE.md` §"Decisiones técnicas críticas". Ninguna cita de aquí es hipotética.
 >
-> Este archivo **no se auto-carga**: léelo cuando la situación lo pida (lo dice `CLAUDE.md`).
+> ⚠️ Este archivo **SÍ se auto-carga** en cada sesión, junto al resto de `.claude/rules/*.md` (~950
+> líneas con `CLAUDE.md`). Antes decía lo contrario; verificado el 10-ago-2026 leyendo el contexto
+> real. Cada línea que añadas aquí se paga en **todas** las conversaciones futuras: no es un cajón.
 
 ---
 
@@ -54,9 +56,24 @@ Nada de "esto debería mejorar la calidad". O lo mides o no lo afirmas.
 ## 11. Bug en un path → revisa los paths ANÁLOGOS
 Y las **etapas** análogas del flujo, no solo las funciones que se parecen. Aquí el flujo es
 `ingesta → pool → historia → TTS → alineación → subtítulos → composición → miniatura → shorts`.
-Precedente vivo: `video_composer` y `shorts_generator` comparten intro animada, woosh, subtítulos y
-alineación, pero con PlayRes, posición y velocidad distintas — un fix en uno casi siempre tiene gemelo
-en el otro, y el de shorts es el que nadie mira.
+
+**Esta regla ya existía y aun así falló dos veces el mismo día** [PATH-02] [LOG-02]: dos fixes de
+`video_cleaner` (rutas absolutas en la lista del demuxer `concat`; registrar el **final** de stderr de
+FFmpeg y no el banner de compilación) no se propagaron a `gameplay_pool`, que hace lo mismo. El de
+`concat` se dispara desde `take_chunk` con 2+ ficheros en el pool = **el caso normal de producción**,
+y el fixture E2E tiene 1 solo fichero, así que nunca lo ejerció. Leer la regla no basta:
+
+**Pares gemelos conocidos — al tocar uno, `grep` el otro ANTES de cerrar:**
+
+| Par | Qué comparten |
+|---|---|
+| `video_cleaner` ↔ `gameplay_pool` | FFmpeg + demuxer `concat` + logging de stderr |
+| `video_composer` ↔ `shorts_generator` | intro animada, woosh, subtítulos, alineación (con PlayRes, posición y velocidad distintas) |
+| historia larga ↔ short (`script_generator` ↔ `shorts_generator`) | `_call_openrouter`, los guardias de salida, la anti-repetición |
+
+El gemelo de shorts es **el que nadie mira**, y el de ingesta es el que **el fixture no ejerce**. Paso
+mecánico: `grep -rn "<símbolo o patrón que acabas de arreglar>" modules/` y justifica cada hit que
+dejas sin tocar.
 
 ## 12. Defensas con dientes — no basta con avisar
 Una comprobación que solo imprime un warning no defiende de nada, porque el pipeline es autónomo y
@@ -73,9 +90,15 @@ Si al arreglar algo ves otra cosa rota en el camino, dilo (y arréglala si es de
 dejes para que la encuentre una corrida de producción de 40 minutos.
 
 ## 15. El coste es ciudadano de primera clase
-Aquí el coste **no es dinero, es cuota**: el tope de **50 peticiones/día** de los modelos `:free` de
+Aquí el coste **no es dinero, es cuota**: el tope de peticiones/día de los modelos `:free` de
 OpenRouter y las **10.000 unidades/día** de la YouTube Data API. Un cambio que sube las peticiones por
 vídeo es un cambio de arquitectura disfrazado: dilo y recalcula, aunque nadie lo pregunte.
+
+**El tope concreto NO se lee de aquí ni de `CLAUDE.md`** — es estado de cuenta y caduca. Verifícalo con
+`GET /api/v1/credits` antes de dimensionar nada (`/api/v1/key` es el tope de gasto de la clave, no el
+saldo). Última verificación: **1000/día** (10 créditos, 10-ago-2026). Este fichero dijo "50/día"
+durante días después de que fuera falso, y tres revisiones adversariales repitieron el dato porque
+estaba escrito en un `.md` [DOC-01].
 
 ## 16. Prueba el CASO DE FALLO — el default tiene que caer del lado barato
 Un gate nuevo es superficie nueva. Antes de darlo por bueno, pásale sus valores degenerados: el
@@ -97,6 +120,14 @@ Es la regla más cara de este repo y ya tiene **tres** episodios:
 
 Corolario: **un comentario que afirma una garantía no la implementa.** Si lees `# esto nunca puede
 pasar`, ve a comprobar qué lo impide.
+
+Segundo corolario, del cuarto episodio [GUARD-01] [BASURA-01]: **un guardia que existe no está
+aplicado.** Comprueba las dos cosas que fallaron aquí — (a) que se llama en **todas** las rutas
+(`_validar_salida` no se invocaba en `_generate_continuation`, así que en una historia de 4-6 bloques
+cubría solo el primero) y (b) que inspecciona **todo el objeto**, no solo la parte donde ya viste el
+fallo (los guardias miraban la CABECERA porque el modo conocido era el razonamiento inicial; la basura
+que se narró y subtituló en un vídeo real estaba **enterrada en el cuerpo**). `grep -rn "<guardia>"
+modules/` y contrasta con la lista de sitios que producen ese valor.
 
 ## 18. Un juicio que el modelo NO puede dar se vuelve determinista o hueco
 Cuando una decisión exige algo que el LLM no puede aportar de forma fiable, no le pidas su mejor

@@ -56,7 +56,7 @@ caracteres son el banner de compilación y el error real queda fuera.
   puerto ocupado hace que el siguiente arranque falle con un error que no tiene nada que ver con tu
   cambio, y se diagnostica mal. Lo mismo con FFmpeg — un render de 40 min en background consume la CPU
   de la siguiente verificación (`-threads 4` existe justo para eso).
-- **Una corrida real gasta cuota**: peticiones del tope de 50/día de OpenRouter. `--dry-run` también.
+- **Una corrida real gasta cuota**: peticiones del tope diario de OpenRouter. `--dry-run` también.
 
 ## REGLAS
 
