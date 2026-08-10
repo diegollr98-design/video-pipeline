@@ -54,15 +54,23 @@ que decirlo** — un primer run no aprueba ni bloquea nada.
 ### 2. Correr la cadena entera
 
 ```bash
-python main.py --config test_e2e/config.yaml
+python main.py --config test_e2e/config.yaml --keep-temp
 ```
+
+⚠️ **`--keep-temp` NO es opcional.** Sin él, `cleanup_temp` borra `test_e2e/temp/` al terminar una
+corrida con éxito — y ahí viven el `.ass` y el `_story.txt`, que son **exactamente lo que este gate
+mide**. El gate destruía sus propias entradas: la primera corrida (10-ago-2026) solo pudo medirse
+copiando los artefactos a mano mientras el pipeline corría. Ledger `[GATE-01]`.
 
 **Con shorts.** Nunca evalúes con `--no-shorts`: oculta una clase entera de fallos (los 4 shorts
 idénticos vivieron ahí). Si el pool ya tiene material y solo quieres producir:
-`python main.py --config test_e2e/config.yaml --skip-ingest`.
+`python main.py --config test_e2e/config.yaml --skip-ingest --keep-temp`.
 
-**Coste:** una corrida consume peticiones del tope de **50/día** de OpenRouter (≈ 1 bloque de historia
-+ N shorts). Estima y **dilo antes de lanzar**. Si quedan pocas peticiones, avisa y pregunta.
+**Coste:** una corrida consume peticiones del tope de **1000/día** de OpenRouter (verificado ago 2026:
+10 créditos comprados). El fixture de 3 min gasta ~5 (1 bloque + 4 shorts); un vídeo de 30 min gasta
+~53. Estima y **dilo antes de lanzar**. **No leas el tope de `CLAUDE.md`** — un dato de estado de
+cuenta caduca; verifícalo con `GET /api/v1/credits` (`total_credits` − `total_usage`), nunca con
+`/api/v1/key`, que da el tope de gasto de la clave. Ledger `[DOC-01]`.
 
 Guarda el log completo. Los errores de FFmpeg se leen por el **final** de stderr — los primeros 500
 caracteres son el banner de compilación.
@@ -72,7 +80,14 @@ caracteres son el banner de compilación.
 Contra una **transcripción independiente** del audio final, no contra los timestamps que produjo el
 propio pipeline (eso sería auto-atestiguarse).
 
-Usa `scripts/eval_sync.py`. **Si no existe, créalo** con esta especificación:
+Usa `scripts/eval_sync.py` (ya existe desde ago 2026):
+
+```bash
+python scripts/eval_sync.py test_e2e/output/video_NNN_final.mp4 \
+       test_e2e/temp/video_NNN_subs.ass --json data/eval/<fecha>.json
+```
+
+Especificación que implementa (por si hay que tocarlo):
 
 - transcribe el WAV final con `faster-whisper` (modelo `small`, español) → palabras con timestamp;
 - lee el `.ass` generado → palabras con su `start`;
@@ -87,11 +102,11 @@ Usa `scripts/eval_sync.py`. **Si no existe, créalo** con esta especificación:
 
 | Qué | Cómo | Umbral |
 |---|---|---|
-| **Pausas fuera de puntuación** | huecos > 0,35 s entre palabras consecutivas del `.ass`; comprueba si la palabra anterior termina en `,.;:!?` | **0** fuera de puntuación |
+| **Pausas fuera de puntuación** | huecos > 0,35 s del `.ass`, medidos **fin de un cue → inicio del siguiente**; comprueba si la palabra anterior termina en `,.;:!?`. `start→start` mide la DURACIÓN de la palabra, no el silencio: ese error reportó 73 pausas falsas donde había 1 (ledger `[INSTR-01]`) | **0** fuera de puntuación (baseline: 1, prosodia de edge-tts) |
 | **Comas de respiración** | cuenta comas del speech y palabras entre comas | ninguna frase > 12 palabras sin coma |
 | **Variedad de shorts** | compara todos los `*_title.txt` de `test_e2e/shorts/` entre sí y con los de `shorts_tiktok/` | ningún par con el mismo argumento |
 | **Offset de gameplay por short** | cada short arranca en un punto distinto | N offsets distintos |
-| **Ratio de duración** | `ffprobe` del vídeo / duración del chunk | ≈ 1.0 (**sin validar aún** con `target_wpm: 195`) |
+| **Ratio de duración** | `ffprobe` del vídeo / duración del chunk | ≈ 1.0. ⚠️ **Este fixture NO puede validar `target_wpm`**: es de 3 min y el knob se calibra para 30. A 3 min la voz corre a ~180-200 wpm y a 30 min a ~160, así que el ratio del gate (baseline **0,779**) no dice nada sobre producción. No lo uses para ajustar `target_wpm` |
 | **Geometría de subtítulos** | `PlayResX/Y` y `\pos()` del `.ass` | largo `1920x1080`+`(960,540)`; short `1080x1920`+`(540,960)` |
 | **Intro** | fin de la frase del título vs inicio del fade; primer subtítulo después de la intro | sin solape |
 | **Artefactos** | `_final.mp4` + `_thumbnail.jpg` + `_title.txt`; por short `.mp4` + `_title.txt` | todos presentes |
