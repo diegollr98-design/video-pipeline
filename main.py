@@ -75,15 +75,24 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
     shorts_config = config["shorts"]
     speed = shorts_config.get("speed", 1.5)
 
-    # Calculate how many shorts fit in the gameplay chunk
+    # Calculate how many shorts fit in the gameplay chunk.
+    #
+    # Usa shorts.narration_wpm, NO story.target_wpm: son dos ritmos distintos
+    # (textos cortos ~200 wpm, historias largas ~160) y compartir la clave hacía
+    # que recalibrar la historia larga cambiase en silencio cuántos shorts se
+    # generan. Ese acoplamiento ya costó un +30% de peticiones sin reportar
+    # cuando target_wpm pasó de 150 a 195 (33 -> 43 shorts por vídeo de 30 min).
     target_words = shorts_config.get("target_words", 200)
-    wpm = config["story"].get("target_wpm", 150)
+    wpm = shorts_config.get("narration_wpm", 200)
     short_audio_dur = (target_words / wpm) * 60  # seconds at 1x TTS speed
     short_real_dur = short_audio_dur / speed      # actual short duration after speed-up
 
     if chunk_duration > 0 and short_real_dur > 0:
         num_shorts = max(1, int(chunk_duration / short_real_dur))
-        logger.info(f"Shorts: {chunk_duration:.0f}s gameplay / {short_real_dur:.0f}s por short = {num_shorts} shorts")
+        logger.info(
+            f"Shorts: {chunk_duration:.0f}s gameplay / {short_real_dur:.0f}s por short "
+            f"= {num_shorts} shorts (= {num_shorts} peticiones de OpenRouter)"
+        )
     else:
         num_shorts = shorts_config.get("generate_per_video", 2)
 

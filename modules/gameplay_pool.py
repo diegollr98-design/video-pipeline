@@ -49,7 +49,7 @@ def _split_video(video_path, split_at_seconds, part1_path, part2_path):
     ]
     r1 = subprocess.run(cmd1, capture_output=True, text=True)
     if r1.returncode != 0:
-        raise RuntimeError(f"Error splitting part 1: {r1.stderr[:300]}")
+        raise RuntimeError(f"Error splitting part 1: {r1.stderr[-500:]}")
 
     # Part 2: split point to end
     cmd2 = [
@@ -60,7 +60,7 @@ def _split_video(video_path, split_at_seconds, part1_path, part2_path):
     ]
     r2 = subprocess.run(cmd2, capture_output=True, text=True)
     if r2.returncode != 0:
-        raise RuntimeError(f"Error splitting part 2: {r2.stderr[:300]}")
+        raise RuntimeError(f"Error splitting part 2: {r2.stderr[-500:]}")
 
 
 def _concat_videos(video_paths, output_path):
@@ -69,9 +69,15 @@ def _concat_videos(video_paths, output_path):
     temp_dir = os.path.dirname(output_path)
     concat_file = os.path.join(temp_dir, f"concat_{int(time.time())}.txt")
 
+    # Rutas ABSOLUTAS: el demuxer concat resuelve las relativas respecto al
+    # directorio del PROPIO fichero de lista, no respecto al cwd. Con el pool en
+    # './pool' y la lista en './temp', 'file ./pool/x.mp4' se resolvía como
+    # './temp/./pool/x.mp4' y fallaba siempre. Es el gemelo del bug ya arreglado
+    # en video_cleaner._concat_segments; aquí seguía vivo y solo se dispara con
+    # 2+ ficheros en el pool, que es el caso normal en producción real.
     with open(concat_file, "w", encoding="utf-8") as f:
         for p in video_paths:
-            safe = p.replace("\\", "/")
+            safe = os.path.abspath(p).replace("\\", "/")
             f.write(f"file '{safe}'\n")
 
     cmd = [
@@ -83,7 +89,7 @@ def _concat_videos(video_paths, output_path):
     os.remove(concat_file)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Error concatenating: {result.stderr[:300]}")
+        raise RuntimeError(f"Error concatenating: {result.stderr[-500:]}")
 
 
 def add_to_pool(video_path, config, is_original=False):
@@ -120,7 +126,7 @@ def add_to_pool(video_path, config, is_original=False):
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Error re-encoding to pool: {result.stderr[:300]}")
+        raise RuntimeError(f"Error re-encoding to pool: {result.stderr[-500:]}")
 
     duration = get_video_duration(dest)
     src_size = os.path.getsize(video_path) / (1024 * 1024)

@@ -50,12 +50,21 @@ video:
   loop_gameplay: true
 
 story:
-  # MEDIDO en producción: es-ES-AlvaroNeural habla a ~200 palabras/minuto
-  # (395 palabras en 118.2s), no a 150. Con 150 se pedían pocas palabras y el
-  # vídeo salía un ~30% más corto que el gameplay disponible (chunk de 171s ->
-  # vídeo de 118s): el resto del gameplay se tiraba. 195 es ligeramente
-  # conservador; si el audio se pasa, loop_gameplay repite el vídeo sin problema.
-  target_wpm: 195
+  # Palabras que se le PIDEN al modelo por minuto de gameplay. NO es la velocidad
+  # de la voz: es el knob que dimensiona la historia larga.
+  #
+  # RECALIBRADO (ago 2026). El 195 anterior se midió sobre clips de 3 min, que es
+  # el régimen equivocado: ahí el modelo se pasa y manda _truncate_to_words; a 30
+  # min se queda corto y manda su propia capacidad. Y la voz NO habla a 200 wpm en
+  # textos largos — depende de la longitud. Medido sobre pipeline.log (n=10):
+  # ~200 wpm en textos cortos, 160,6 wpm en la única producción larga real
+  # (5047 palabras / 1885 s).
+  #
+  #   target_wpm | palabras pedidas | audio resultante | ratio sobre chunk de 30 min
+  #        150   |      4500        |     28,0 min     |   0,93
+  #        160   |      4800        |     29,9 min     |   1,00   <- elegido
+  #        195   |      5850        |     36,4 min     |   1,21   (6 min de gameplay repetido)
+  target_wpm: 160
   min_words: 500
   max_words: 8000
   style: "dramatic"              # dramatic | funny | horror | wholesome
@@ -141,7 +150,14 @@ competition:
 
 shorts:
   enabled: true
-  target_words: 200              # ~60-90 segundos a velocidad normal
+  target_words: 200              # ~60 s a velocidad normal, ~40 s tras el x1.5
   speed: 1.5                     # playback speed (x1.5 = faster narration)
+  # Velocidad REAL de narración de un texto corto, en palabras/minuto. Es el knob
+  # que dimensiona los SHORTS y NO tiene por qué coincidir con story.target_wpm:
+  # los textos cortos se narran a ~200 wpm y las historias largas a ~160 (medido
+  # sobre pipeline.log). Antes main.py usaba story.target_wpm para las dos cosas,
+  # así que recalibrar la historia larga movía en silencio cuántos shorts se
+  # generaban — y con ellos el gasto de peticiones de OpenRouter.
+  narration_wpm: 200
   generate_per_video: 2          # cuántos shorts generar por cada video largo
   per_style: true                # si generar shorts de estilo similar al video largo o aleatorio

@@ -1145,7 +1145,7 @@ with tab_config:
         value=bool(cfg["shorts"]["enabled"]),
         key="cfg_shorts_enabled",
     )
-    col_sh1, col_sh2, col_sh3 = st.columns(3)
+    col_sh1, col_sh2, col_sh3, col_sh4 = st.columns(4)
     shorts_target_words = col_sh1.number_input(
         "Palabras objetivo",
         min_value=50,
@@ -1163,13 +1163,26 @@ with tab_config:
         value=float(cfg["shorts"]["speed"]),
         key="cfg_shorts_speed",
     )
-    shorts_generate_per_video = col_sh3.number_input(
+    shorts_narration_wpm = col_sh3.number_input(
+        "Ritmo narración (wpm)",
+        min_value=100,
+        max_value=280,
+        step=5,
+        value=int(cfg["shorts"].get("narration_wpm", 200)),
+        key="cfg_shorts_narration_wpm",
+        help="Velocidad real de narración de un texto corto. Dimensiona cuántos "
+             "shorts caben en el chunk, y por tanto cuántas peticiones se gastan. "
+             "Es independiente de story.target_wpm (historias largas, ~160 wpm).",
+    )
+    shorts_generate_per_video = col_sh4.number_input(
         "Shorts por video",
         min_value=1,
         max_value=20,
         step=1,
         value=int(cfg["shorts"]["generate_per_video"]),
         key="cfg_shorts_generate_per_video",
+        help="Solo se usa como fallback si no se puede calcular el número a "
+             "partir de la duración del chunk.",
     )
 
     st.divider()
@@ -1227,6 +1240,7 @@ with tab_config:
         cfg["shorts"]["enabled"] = bool(shorts_enabled)
         cfg["shorts"]["target_words"] = int(shorts_target_words)
         cfg["shorts"]["speed"] = float(shorts_speed)
+        cfg["shorts"]["narration_wpm"] = int(shorts_narration_wpm)
         cfg["shorts"]["generate_per_video"] = int(shorts_generate_per_video)
 
         cfg["video"]["output_codec"] = video_output_codec

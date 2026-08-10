@@ -111,11 +111,24 @@ def _parse_title_and_speech(text):
 # nvidia/nemotron-3-ultra es un modelo de razonamiento y lo hace de vez en
 # cuando: en una corrida real, un short salió con el título "The user wants a
 # viral micro-story script for YouTube Shorts/TikTok." y un vídeo de 4,5s.
+#
+# OJO: se buscan como SUBCADENA en cualquier parte del título, así que aquí solo
+# pueden vivir marcadores que NO puedan aparecer en español narrativo normal.
+# Medido sobre los 50 títulos completos de pipeline.log + casos de control:
+# "vamos a" era español corrientísimo ("...Y Ahora Vamos A Juicio") y tiraba
+# títulos legítimos. Un falso positivo cuesta una petición y un reintento.
 _MARCADORES_RAZONAMIENTO = (
     "the user", "the assistant", "i need to", "i should", "let me", "we need",
     "okay,", "alright,", "first,", "sure,", "here's", "here is", "as an ai",
-    "el usuario quiere", "necesito escribir", "vamos a", "voy a escribir",
-    "título:", "titulo:", "historia:", "```",
+    "el usuario quiere", "necesito escribir", "voy a escribir", "```",
+)
+
+# Marcadores ambiguos: solo cuentan si el título EMPIEZA por ellos, que es la
+# forma real en que se cuela la fuga ("Titulo: The user wants a viral micro-story
+# script..."). Como subcadena tiraban títulos legítimos: "Mi Historia: Cómo Mi
+# Hermana Me Robó El Negocio Familiar..." es del estilo del repo.
+_MARCADORES_INICIO = (
+    "título:", "titulo:", "historia:", "title:", "story:",
 )
 
 # Palabras funcionales españolas para confirmar que el título está en español.
@@ -144,6 +157,10 @@ def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
         if marcador in bajo:
             return False, f"el título contiene razonamiento del modelo ('{marcador}')"
 
+    for marcador in _MARCADORES_INICIO:
+        if bajo.lstrip().startswith(marcador):
+            return False, f"el título empieza por un encabezado del modelo ('{marcador}')"
+
     # El título tiene que parecer español, no inglés.
     tokens = re.findall(r"[a-záéíóúüñ]+", bajo)
     aciertos = sum(1 for t in tokens if t in _ES_FUNCIONALES)
@@ -152,6 +169,40 @@ def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
 
     if len(speech.split()) < min_palabras_speech:
         return False, f"speech de {len(speech.split())} palabras (mínimo {min_palabras_speech})"
+
+    return True, ""
+
+
+def _validar_continuacion(texto, min_palabras=200):
+    """¿Este bloque de continuación es narración utilizable? Devuelve (bool, motivo).
+
+    Una continuación no trae título, así que no vale _validar_salida. El modo de
+    fallo real medido es el mismo: nemotron razona en voz alta, agota el
+    presupuesto y devuelve un fragmento sin formato (448 caracteres, ~70
+    palabras). Se mira solo la CABECERA del bloque para los marcadores: es donde
+    aparece la fuga, y buscarlos en 2000 palabras de narración da falsos
+    positivos.
+    """
+    if not texto or not texto.strip():
+        return False, "continuación vacía"
+
+    palabras = texto.split()
+    if len(palabras) < min_palabras:
+        return False, f"continuación de {len(palabras)} palabras (mínimo {min_palabras})"
+
+    cabecera = texto.strip()[:300].lower()
+    for marcador in _MARCADORES_RAZONAMIENTO:
+        if marcador in cabecera:
+            return False, f"la continuación empieza con razonamiento del modelo ('{marcador}')"
+    for marcador in _MARCADORES_INICIO:
+        if cabecera.lstrip().startswith(marcador):
+            return False, f"la continuación empieza por un encabezado del modelo ('{marcador}')"
+
+    # Tiene que parecer español, no un volcado de razonamiento en inglés.
+    tokens = re.findall(r"[a-záéíóúüñ]+", cabecera)
+    aciertos = sum(1 for t in tokens if t in _ES_FUNCIONALES)
+    if aciertos < 2 and not re.search(r"[áéíóúñü]", cabecera):
+        return False, "la continuación no parece español"
 
     return True, ""
 
@@ -290,7 +341,7 @@ Escribe MÍNIMO {WORDS_PER_BLOCK} palabras. NO escribas menos.
 
 RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni guiones de diálogo. Narración continua."""
 
-    messages = [
+    base = [
         {
             "role": "user",
             "content": f"Estás escribiendo una historia larga para YouTube titulada:\n\"{title}\"\n\nLa historia total debe tener {target_words} palabras. Llevas {len(story_so_far.split())} palabras escritas hasta ahora."
@@ -299,13 +350,32 @@ RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni gui
             "role": "assistant",
             "content": story_so_far
         },
-        {
-            "role": "user",
-            "content": instruction
-        },
     ]
 
-    return _call_openrouter(messages, config)
+    # El guardia contra el razonamiento del modelo vivía SOLO en el primer
+    # bloque. En una historia de 30 min son 4-6 bloques: protegía el primero y
+    # dejaba los demás sin red, o sea ~2 de cada 3 peticiones sin validar.
+    intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
+    motivo = ""
+    for intento in range(intentos):
+        mensaje = instruction
+        if intento:
+            mensaje = (
+                "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de "
+                "continuar la historia. Continúa la narración en español directamente, "
+                "sin ningún texto previo ni encabezado.\n\n"
+            ) + instruction
+
+        texto = _call_openrouter(base + [{"role": "user", "content": mensaje}], config)
+        ok, motivo = _validar_continuacion(texto)
+        if ok:
+            return texto
+        logger.warning(f"Continuación descartada ({motivo}); reintento {intento + 2}/{intentos}")
+
+    raise RuntimeError(
+        f"El modelo no devolvió una continuación utilizable tras {intentos} intentos. "
+        f"Último motivo: {motivo}."
+    )
 
 
 def generate_story(target_words, style, config):
