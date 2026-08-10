@@ -14,6 +14,25 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.3 — 2026-08-10 — Primera producción real de 30 min: destapó un vídeo no publicable 🔴
+**Qué se hizo:** Corrida completa a escala real (33,4 min de gameplay → vídeo de 29,85 min + 50
+shorts, 53 peticiones, ~2h40). Antes: baseline de `/eval` fijado sobre el fixture de 3 min y
+`--keep-temp` añadido porque `cleanup_temp` borraba el `.ass` que el gate mide.
+**Incidentes:** [BASURA-01] [ANCLA-01] [INSTR-02] (+ los 6 de v0.2).
+**Verificación:** El vídeo resultante **NO es publicable**: (a) basura del modelo narrada y
+subtitulada en el minuto 15:38-15:47 (`temp/video_001_subs.ass:2756` → `ONEAN`, `0230`, `0207-`);
+(b) 4 ventanas de anclaje con frases enteras ~1 s por detrás de la voz, confirmado con
+transcripciones frescas de 40 s (1000-1040 s: **+1,050 s**, 90 de 125 palabras >0,5 s; control
+300-340 s: **−0,110 s**). Causa raíz localizada por `bug-hunter` y validada por ejecución:
+`tts_engine.py:458` traslada la ventana entera usando UNA sola palabra. (a) arreglado con
+`_detectar_basura` (0 falsos positivos sobre ~12.700 palabras de español real); (b) **fix
+propuesto, NO aplicado**.
+**Lo que esto enseña:** `/eval` sobre 3 min (12 ventanas de anclaje) dio verde a este vídeo. La
+producción real tiene 214 ventanas. **El gate no puede ver esta clase de fallo.**
+**Pendiente:** `seeds/SEED_sincronismo_produccion.md` — arreglar el emparejado global de
+`eval_sync` (dio 3 falsos positivos hoy), aplicar y verificar el fix del anclaje, `target_wpm`
+177 (n=2), variedad de los 50 shorts, y decidir qué hacer con un gate que no cubre producción.
+
 ## v0.2 — 2026-08-10 — SEED de validación: revisado, reescrito y ejecutado ✅
 **Qué se hizo:** El `SEED_validar_cambios.md` pedía barrer 6 parámetros con 6 agentes en paralelo.
 `/seed-review` (TIER PANEL: 1 agente ciego + 3 críticos) lo tumbó: 4 de 6 bloques no tenían
