@@ -52,7 +52,15 @@ def _build_avoid_block(avoid):
     if not avoid:
         return ""
 
-    lineas = "\n".join(f"  {i}. {t}" for i, t in enumerate(avoid[-12:], 1))
+    # La ventana era de 12. Con 45 shorts por vídeo de 30 min eso significa que
+    # el short nº 40 ya no ve los 28 primeros y puede repetir su argumento: el
+    # modelo no puede evitar lo que no se le enseña. Y como main.py siembra la
+    # lista con los títulos del disco AL PRINCIPIO, con ventana de 12 salían
+    # fuera en cuanto se generaban 12 shorts nuevos, así que la protección
+    # ENTRE corridas solo cubría los primeros.
+    # 40 entradas × ~15 palabras ≈ 600 palabras de prompt: despreciable frente a
+    # la historia, y cubre una tanda entera.
+    lineas = "\n".join(f"  {i}. {t}" for i, t in enumerate(avoid[-40:], 1))
     return f"""
 
 PROHIBIDO REPETIR. Ya has escrito estas historias en esta misma tanda:
