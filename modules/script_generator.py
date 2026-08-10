@@ -170,7 +170,83 @@ def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
     if len(speech.split()) < min_palabras_speech:
         return False, f"speech de {len(speech.split())} palabras (mínimo {min_palabras_speech})"
 
+    # El CUERPO, no solo la cabecera: la basura del modelo se entierra a mitad.
+    hay_basura, motivo = _detectar_basura(speech)
+    if hay_basura:
+        return False, f"basura en el cuerpo del speech: {motivo}"
+
     return True, ""
+
+
+# Palabras funcionales inglesas. En narración española no aparecen; en una
+# ráfaga degenerada del modelo salen a puñados.
+_STOPWORDS_EN = frozenset((
+    "the", "and", "that", "with", "this", "was", "were", "they", "their",
+    "from", "which", "would", "about", "there", "have", "has", "been", "will",
+    "what", "when", "your", "you", "need", "writing", "user", "assistant",
+))
+
+# Caracteres que no pinta nada ver en una historia en español.
+_RE_CHAR_EXTRANO = re.compile(r"[^\w\s.,;:!?¡¿\"'«»()\[\]\-–—…%€$/&+*=@#\n]", re.UNICODE)
+
+
+def _detectar_basura(texto, ventana=60, umbral=3):
+    """¿Hay una RÁFAGA de texto degenerado en el cuerpo? Devuelve (bool, motivo).
+
+    Caso real medido (vídeo de producción, 10-ago-2026): a mitad de una historia
+    de 5290 palabras el modelo escupió
+
+        "de onean need that the writing plan2:en300 five the 02 0230 the0222
+         0207- 01=، the 02201 the"
+
+    y eso se NARRÓ y se SUBTITULÓ: sale en pantalla en el minuto 15:38-15:47 de
+    un vídeo publicable. Los guardias anteriores (`_validar_salida`,
+    `_validar_continuacion`) solo miran la CABECERA de la salida, porque el modo
+    de fallo conocido era el razonamiento al principio. Este no está al
+    principio: está enterrado a mitad del cuerpo, donde nadie mira.
+
+    Se cuenta por VENTANA deslizante, no en total: una ráfaga concentrada es la
+    firma, mientras que un "COVID-19" suelto en 5000 palabras no lo es.
+    """
+    palabras = texto.split()
+    if len(palabras) < 10:
+        return False, ""
+
+    anomalias = [0] * len(palabras)
+    detalle = {}
+    for i, bruto in enumerate(palabras):
+        limpia = bruto.strip(".,;:!?¡¿\"'«»()[]—–-").lower()
+        if not limpia:
+            continue
+        tiene_letra = any(c.isalpha() for c in limpia)
+        tiene_digito = any(c.isdigit() for c in limpia)
+        if tiene_letra and tiene_digito:
+            anomalias[i] = 1
+            detalle[i] = f"mezcla letra/dígito ({bruto!r})"
+        elif limpia in _STOPWORDS_EN:
+            anomalias[i] = 1
+            detalle[i] = f"palabra inglesa ({bruto!r})"
+        elif _RE_CHAR_EXTRANO.search(limpia):
+            anomalias[i] = 1
+            detalle[i] = f"carácter fuera del español ({bruto!r})"
+
+    # Ventana deslizante contando tokens DISTINTOS: la basura trae anomalías
+    # variadas ('need', 'that', 'plan2:en300', 'the0222'…), mientras que un
+    # nombre propio raro repetido ('iPhone13' tres veces) es un solo token y no
+    # debe disparar.
+    posiciones = [i for i, a in enumerate(anomalias) if a]
+    for k, ini in enumerate(posiciones):
+        distintos = {
+            palabras[j].strip(".,;:!?¡¿\"'«»()[]—–-").lower()
+            for j in posiciones[k:] if j < ini + ventana
+        }
+        if len(distintos) >= umbral:
+            muestras = [detalle[j] for j in posiciones[k:k + 3]]
+            fragmento = " ".join(palabras[ini:ini + 16])
+            return True, (f"ráfaga de {len(distintos)} anomalías distintas en {ventana} "
+                          f"palabras (palabra ~{ini}): {'; '.join(muestras)} | «{fragmento[:150]}»")
+
+    return False, ""
 
 
 def _validar_continuacion(texto, min_palabras=200):
@@ -203,6 +279,11 @@ def _validar_continuacion(texto, min_palabras=200):
     aciertos = sum(1 for t in tokens if t in _ES_FUNCIONALES)
     if aciertos < 2 and not re.search(r"[áéíóúñü]", cabecera):
         return False, "la continuación no parece español"
+
+    # El CUERPO entero, no solo los 300 primeros caracteres.
+    hay_basura, motivo = _detectar_basura(texto)
+    if hay_basura:
+        return False, f"basura en el cuerpo de la continuación: {motivo}"
 
     return True, ""
 
