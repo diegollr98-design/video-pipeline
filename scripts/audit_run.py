@@ -201,6 +201,44 @@ def ngramas_repetidos(texto, n=12):
     return len(dups), largo
 
 
+def evalua_titulo_youtube(video):
+    """El título contra el campo REAL de YouTube (el que se PUBLICARÍA).
+
+    Contrato: `<stem>_title_yt.txt` es el título corto para el campo de
+    YouTube (<=100 caracteres), y puede no existir todavía. Si existe, es la
+    fuente de verdad de lo que se publica: se mide el CRUDO, sin aplicar el
+    recorte defensivo del uploader, porque un corto que ya nace >100
+    caracteres es un contrato roto aguas arriba, no algo sano que el recorte
+    "arregla". Si no existe, cae al largo (siempre recortado por el
+    uploader) y eso es esperado -> AVISO, no FALLA.
+
+    Devuelve (lineas_para_imprimir, fallos).
+    """
+    from modules.youtube_uploader import titulo_corto_path
+    titulo_f = video[: -len("_final.mp4")] + "_title.txt"
+    yt_f = titulo_corto_path(video)
+    t_yt = open(yt_f, encoding="utf-8").read().strip() if os.path.exists(yt_f) else ""
+
+    lineas, fallos = [], []
+    if t_yt:
+        est = OK if len(t_yt) <= 100 else MAL
+        lineas.append(f"{est} título YouTube (corto, se publica): {len(t_yt)} caracteres, "
+                      f"{len(t_yt.split())} palabras")
+        if est == MAL:
+            lineas.append(f"       se publicaría (crudo): {t_yt}")
+            fallos.append(f"título corto de {len(t_yt)} caracteres: supera el "
+                          f"límite de 100 de YouTube (contrato roto en "
+                          f"{os.path.basename(yt_f)})")
+    elif os.path.exists(titulo_f):
+        t = open(titulo_f, encoding="utf-8").read().strip()
+        lineas.append(f"{AVISO} sin título corto ({os.path.basename(yt_f)}): se publicaría "
+                      f"el largo recortado ({len(t)} caracteres, {len(t.split())} palabras)")
+    else:
+        lineas.append(f"{AVISO} sin título largo ni corto: no se puede comprobar qué se "
+                      f"publicaría")
+    return lineas, fallos
+
+
 def audita_video(video, ass, story, chunk_dur=None, model="small"):
     print(f"\n=== VÍDEO LARGO: {os.path.basename(video)} ===")
     fallos = []
@@ -296,17 +334,11 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         print(f"{est} loudness: {i:.1f} LUFS{pico}. YouTube normaliza "
               f"a -14 y SOLO BAJA: por debajo suena más flojo que la competencia")
 
-    # --- el título contra el campo REAL de YouTube
-    titulo_f = video[: -len("_final.mp4")] + "_title.txt"
-    if os.path.exists(titulo_f):
-        t = open(titulo_f, encoding="utf-8").read().strip()
-        est = OK if len(t) <= 100 else MAL
-        print(f"{est} título: {len(t)} caracteres, {len(t.split())} palabras "
-              f"(YouTube corta en 100)")
-        if est == MAL:
-            print(f"       se publicaría: {t[:97]}...")
-            fallos.append(f"título de {len(t)} caracteres: YouTube corta en 100 y "
-                          f"se pierde el gancho")
+    # --- el título contra el campo REAL de YouTube (el que se PUBLICARÍA)
+    lineas_titulo, fallos_titulo = evalua_titulo_youtube(video)
+    for linea in lineas_titulo:
+        print(linea)
+    fallos += fallos_titulo
 
     ass_txt = open(ass, encoding="utf-8").read()
     geo = "1920" in ass_txt.split("PlayResY")[0] and "pos(960,540)" in ass_txt
@@ -329,6 +361,17 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
     if titulos:
         unicos = len(set(titulos))
         print(f"{OK if unicos == len(titulos) else MAL} títulos únicos: {unicos}/{len(titulos)}")
+
+        # Los shorts NO se suben automáticamente todavía, así que esto es
+        # informativo (AVISO), nunca FALLA. Y no se tocan los títulos: se
+        # narran, y recortarlos cambiaría la narración (medido: 4/30 lo superan).
+        largos = [(os.path.basename(f)[: -len("_title.txt")], len(t))
+                  for f, t in zip(titulos_f, titulos) if len(t) > 100]
+        print(f"{AVISO if largos else OK} títulos de shorts >100 caracteres: "
+              f"{len(largos)}/{len(titulos)} (informativo: los shorts no se suben "
+              f"automáticamente)")
+        for stem, n in largos[:5]:
+            print(f"       {stem}: {n} caracteres")
         aperturas = [t.split()[0].lower() for t in titulos if t.split()]
         distintas = len(set(aperturas))
         racha = maxracha = 1

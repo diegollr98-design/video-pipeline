@@ -9,7 +9,7 @@ from modules.utils import (
     load_dotenv, load_config, ensure_dirs, cleanup_temp,
     get_video_duration, calculate_target_words, check_dependencies,
 )
-from modules.script_generator import generate_story
+from modules.script_generator import generate_story, generar_titulo_youtube
 from modules.tts_engine import run_tts
 from modules.subtitle_builder import vtt_to_ass
 from modules.video_composer import compose
@@ -241,6 +241,16 @@ def produce_video(chunk_path, chunk_duration, video_num, config, args):
         print(story)
         return True
 
+    # 2b. Título CORTO para el campo de título de YouTube (≤100 caracteres).
+    # El título LARGO de arriba no cambia: sigue siendo el que se narra, el
+    # de la intro (title_end_time se calcula sobre él más abajo) y el de la
+    # miniatura. Este es un fichero NUEVO, no un reemplazo de `_title.txt`.
+    titulo_yt = generar_titulo_youtube(title, config)
+    titulo_yt_path = os.path.join(config["paths"]["output_dir"], f"{stem}_title_yt.txt")
+    with open(titulo_yt_path, "w", encoding="utf-8") as f:
+        f.write(titulo_yt)
+    logger.info(f"Título YouTube ({len(titulo_yt)} caracteres): {titulo_yt}")
+
     # 3. TTS (auto-detects gender from story, selects male/female voice)
     audio_path = os.path.join(temp_dir, f"{stem}_audio.mp3")
     vtt_path = os.path.join(temp_dir, f"{stem}_subs.vtt")
@@ -290,17 +300,25 @@ def _auditar_salida(config, args, chunk_dur):
     """
     import subprocess
 
-    cmd = [sys.executable, os.path.join("scripts", "audit_run.py"),
-           "--output", config["paths"]["output_dir"],
-           "--temp", config["paths"]["temp_dir"],
-           "--shorts", str(args.audit_shorts)]
-    if config.get("shorts", {}).get("shorts_dir"):
-        cmd += ["--shorts-dir", config["shorts"]["shorts_dir"]]
-    if chunk_dur:
-        cmd += ["--chunk-dur", f"{chunk_dur:.1f}"]
+    # `logger` es local a cada funcion en este modulo (no hay uno de modulo).
+    logger = logging.getLogger(__name__)
 
-    logger.info(f"Auditando la salida: {' '.join(cmd[1:])}")
+    # TODO el cuerpo va dentro del try: la primera version dejaba fuera el
+    # armado del comando y un NameError se llevo por delante la corrida entera
+    # justo despues de "Pipeline finalizado". Marcar, no matar significa que
+    # NADA de aqui puede propagar.
     try:
+        cmd = [sys.executable, os.path.join("scripts", "audit_run.py"),
+               "--output", config["paths"]["output_dir"],
+               "--temp", config["paths"]["temp_dir"],
+               "--shorts", str(args.audit_shorts)]
+        shorts_dir = (config.get("paths") or {}).get("shorts_dir")
+        if shorts_dir:
+            cmd += ["--shorts-dir", shorts_dir]
+        if chunk_dur:
+            cmd += ["--chunk-dur", f"{chunk_dur:.1f}"]
+
+        logger.info(f"Auditando la salida: {' '.join(cmd[1:])}")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
                            encoding="utf-8", errors="replace")
         for linea in (r.stdout or "").splitlines():

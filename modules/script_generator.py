@@ -745,3 +745,182 @@ def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
         f"un SALTO en la narracion en ese punto."
     )
     return cuerpo + "\n\n" + cierre
+
+
+# --- Título de YouTube (campo de 100 caracteres) [TITULOYT-01] ---------------
+# El título LARGO (20-35 palabras, 150-191 caracteres medido) es el que se
+# narra, el de la intro y el de la miniatura: eso no cambia aquí. Pero YouTube
+# corta el campo de título del video en 100 caracteres, y el gancho de este
+# estilo de historia va al FINAL de la frase — así que publicar el título
+# largo tal cual pierde el gancho entero. `generar_titulo_youtube` deriva un
+# título corto (10-14 palabras) que SÍ conserva el gancho, para ese campo.
+#
+# Por §17 de este repo ("una garantía prometida en prosa no está garantizada
+# hasta que un `if` la fuerza"), el límite de 100 caracteres y de palabras se
+# valida en código, nunca se confía en que el modelo lo obedezca.
+_YT_TITULO_MAX_CHARS = 100
+_YT_TITULO_MIN_PALABRAS = 6
+_YT_TITULO_MAX_PALABRAS = 16
+
+
+def _cortar_por_palabra(texto, max_chars=_YT_TITULO_MAX_CHARS):
+    """Recorta `texto` a `max_chars` sin partir ninguna palabra a la mitad.
+
+    Es el FALLBACK que nunca puede fallar: si el modelo no da un título
+    corto utilizable, este recorte determinista del título largo garantiza
+    igualmente un string ≤ max_chars. Si no hay ningún espacio dentro del
+    límite (un solo "palabrón" más largo que max_chars, caso degenerado),
+    no hay frontera de palabra que respetar y se corta duro — es preferible
+    a no devolver nada.
+    """
+    texto = (texto or "").strip()
+    if len(texto) <= max_chars:
+        return texto
+    cortado = texto[:max_chars]
+    ultimo_espacio = cortado.rfind(" ")
+    if ultimo_espacio > 0:
+        cortado = cortado[:ultimo_espacio]
+    return cortado.rstrip(" .,;:-–—").strip()
+
+
+def _validar_titulo_youtube(titulo):
+    """¿Este título corto sirve para el campo de YouTube? Devuelve (bool, motivo).
+
+    Reutiliza los mismos marcadores/heurísticos que `_validar_salida` (fuga de
+    razonamiento, encabezados del modelo, español plausible) en vez de
+    inventar otros nuevos, y añade el único límite que le importa a este
+    campo: el de caracteres.
+    """
+    if not titulo or not titulo.strip():
+        return False, "título vacío"
+
+    titulo = titulo.strip()
+
+    if len(titulo) > _YT_TITULO_MAX_CHARS:
+        return False, f"título de {len(titulo)} caracteres (máximo {_YT_TITULO_MAX_CHARS})"
+
+    palabras = titulo.split()
+    if not (_YT_TITULO_MIN_PALABRAS <= len(palabras) <= _YT_TITULO_MAX_PALABRAS):
+        return False, (
+            f"título de {len(palabras)} palabras (esperado "
+            f"{_YT_TITULO_MIN_PALABRAS}-{_YT_TITULO_MAX_PALABRAS})"
+        )
+
+    bajo = titulo.lower()
+    for marcador in _MARCADORES_RAZONAMIENTO:
+        if marcador in bajo:
+            return False, f"el título contiene razonamiento del modelo ('{marcador}')"
+
+    for marcador in _MARCADORES_INICIO:
+        if bajo.lstrip().startswith(marcador):
+            return False, f"el título empieza por un encabezado del modelo ('{marcador}')"
+
+    tokens = re.findall(r"[a-záéíóúüñ]+", bajo)
+    aciertos = sum(1 for t in tokens if t in _ES_FUNCIONALES)
+    if aciertos < 2 and not re.search(r"[áéíóúñü]", bajo):
+        return False, "el título no parece español"
+
+    return True, ""
+
+
+def _ultima_linea_util(raw):
+    """La ÚLTIMA línea no vacía, limpia de comillas y de prefijos del modelo.
+
+    Un modelo de razonamiento escribe primero lo que está pensando y pone la
+    respuesta al FINAL. Quedarse con `raw.strip()` entero mete el razonamiento
+    completo en el título; quedarse con la primera línea, peor todavía. Medido
+    contra la API real: 5 de 5 respuestas empezaban por "The user wants..." o
+    "We need to produce a short title...".
+    """
+    lineas = [ln.strip() for ln in (raw or "").splitlines()]
+    lineas = [ln for ln in lineas if ln]
+    if not lineas:
+        return ""
+    linea = lineas[-1]
+    # Prefijos con los que a veces etiqueta su propia respuesta.
+    for pref in ("título:", "titulo:", "title:", "respuesta:", "final:", "-", "*", "#"):
+        if linea.lower().startswith(pref):
+            linea = linea[len(pref):].strip()
+    return linea.strip().strip('"').strip("'").strip("«»").strip()
+
+
+def generar_titulo_youtube(titulo_largo, config):
+    """Deriva el título CORTO (≤100 caracteres) para el campo de título de YouTube.
+
+    El título largo sigue siendo el que se narra, el de la intro y el de la
+    miniatura — esta función NO lo toca ni lo sustituye en ningún otro sitio,
+    solo produce un campo nuevo. Pasa por `_call_openrouter`, la única costura
+    permitida a OpenRouter en este repo, así que la llamada cuenta contra el
+    tope diario igual que cualquier otra.
+
+    Garantía dura: NUNCA lanza excepción ni devuelve "" para una entrada no
+    vacía. Si el modelo no da un título válido tras los reintentos, cae a un
+    recorte determinista del título largo (`_cortar_por_palabra`) que siempre
+    cabe en 100 caracteres.
+    """
+    titulo_largo = (titulo_largo or "").strip()
+    if not titulo_largo:
+        return ""
+
+    # Ya cabe en el campo de YouTube: no hace falta gastar una petición.
+    if len(titulo_largo) <= _YT_TITULO_MAX_CHARS:
+        return titulo_largo
+
+    prompt = f"""Convierte este título largo de un video de YouTube en un título CORTO para el campo de título del video.
+
+Título largo original:
+"{titulo_largo}"
+
+Reglas del título corto (todas obligatorias):
+- Entre 10 y 14 palabras.
+- Máximo 100 caracteres en total, contando espacios.
+- En español de España.
+- Conserva el GANCHO de la historia (lo más impactante, aunque en el título largo esté al final), no solo el arranque.
+- Mismo estilo Title Case que el original (Mayúscula Inicial En Cada Palabra).
+- Responde ÚNICAMENTE con el título. Sin comillas, sin explicaciones, sin prefijos como "Título:"."""
+
+    intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
+    motivo = "sin intentos"
+    candidato = ""
+    for intento in range(intentos):
+        mensaje = prompt
+        if intento:
+            mensaje = (
+                "TU RESPUESTA ANTERIOR NO SIRVIÓ. Responde ÚNICAMENTE con el título "
+                "corto en español, de 10 a 14 palabras, sin superar 100 caracteres en "
+                "total, sin comillas, sin explicaciones ni razonamiento previo.\n\n"
+            ) + prompt
+
+        try:
+            # max_tokens GENEROSO a propósito, aunque la salida sean 100
+            # caracteres. Con 200 esto NO funcionaba NUNCA: medido contra la API
+            # real, los 5 intentos devolvieron razonamiento cortado a mitad
+            # ("The user wants a short title...", 599-745 caracteres = justo el
+            # tope) y el título no llegaba a escribirse jamás, así que SIEMPRE
+            # caía al fallback gastando 5 peticiones para nada. nvidia/nemotron
+            # es un modelo de razonamiento: hay que pagarle el razonamiento para
+            # que llegue a la respuesta.
+            raw = _call_openrouter([{"role": "user", "content": mensaje}], config, max_tokens=2000)
+        except Exception as e:
+            motivo = f"error llamando a OpenRouter: {e}"
+            logger.warning(f"Título YouTube: intento {intento + 1}/{intentos} falló ({motivo})")
+            continue
+
+        candidato = _ultima_linea_util(raw)
+        ok, motivo = _validar_titulo_youtube(candidato)
+        if ok:
+            return candidato
+        logger.warning(
+            f"Título YouTube descartado ({motivo}); reintento {intento + 2}/{intentos}: "
+            f"{candidato[:100]!r}"
+        )
+
+    # FALLBACK DETERMINISTA (§13: nunca fallback mudo — se loguea ruidosamente
+    # que se está cayendo a él, no se disimula como si fuera el camino normal).
+    fallback = _cortar_por_palabra(titulo_largo, _YT_TITULO_MAX_CHARS)
+    logger.warning(
+        f"Título YouTube: SIN título válido del modelo tras {intentos} intento(s) "
+        f"(último motivo: {motivo}; último candidato: {candidato[:100]!r}). "
+        f"Cayendo al FALLBACK determinista: {fallback!r} ({len(fallback)} caracteres)"
+    )
+    return fallback

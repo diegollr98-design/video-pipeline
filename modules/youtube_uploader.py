@@ -151,11 +151,16 @@ def pendientes(config):
         if os.path.exists(titulo_txt):
             with open(titulo_txt, encoding="utf-8") as f:
                 titulo = f.read().strip()
+        titulo_yt_bruto = _lee_titulo_txt(titulo_corto_path(ruta)) or None
+        titulo_pub, _titulo_largo_resuelto, fuente_titulo = resuelve_titulo_publicable(ruta)
         auditoria = lee_veredicto(ruta)
         items.append({
             "video": ruta,
             "stem": stem,
             "titulo": titulo,
+            "titulo_yt": titulo_yt_bruto,
+            "titulo_publicado": titulo_pub,
+            "titulo_publicado_fuente": fuente_titulo,
             "thumbnail": thumb if os.path.exists(thumb) else None,
             "tam_mb": round(os.path.getsize(ruta) / 1024 / 1024, 1),
             "subido": ya_subido(ruta),
@@ -187,6 +192,82 @@ def lee_veredicto(video):
     except Exception as e:
         return {"ok": False, "medido": False,
                 "fallos": [f"veredicto ilegible ({type(e).__name__})"]}
+
+
+# ---------------------------------------------------------------- título
+# Contrato fijado con el otro agente (11-ago-2026), no se renegocia aquí:
+#   <stem>_title.txt     -> título LARGO (28-38 palabras). El de siempre: se
+#                            narra, va a la intro y a la miniatura.
+#   <stem>_title_yt.txt  -> título CORTO para el campo de YouTube (<=100
+#                            caracteres). NUEVO. Puede no existir (vídeos
+#                            viejos, o si aún no ha corrido el otro agente).
+def titulo_largo_path(video_path):
+    stem = os.path.basename(video_path)[: -len("_final.mp4")]
+    return os.path.join(os.path.dirname(video_path), f"{stem}_title.txt")
+
+
+def titulo_corto_path(video_path):
+    stem = os.path.basename(video_path)[: -len("_final.mp4")]
+    return os.path.join(os.path.dirname(video_path), f"{stem}_title_yt.txt")
+
+
+def _lee_titulo_txt(path):
+    if not path or not os.path.exists(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        logger.warning(f"No se pudo leer {path}: {e}")
+        return ""
+
+
+def _recorta_a_100(titulo):
+    """Recorta por palabras a <=100 caracteres. Devuelve (titulo, fue_recortado).
+
+    YouTube corta el campo de título en 100. Se recorta por palabra completa
+    (nunca a mitad) y se marca con '...' para que sea visible que se cortó.
+    """
+    if len(titulo) <= 100:
+        return titulo, False
+    recorte = []
+    for p in titulo.split():
+        if len(" ".join(recorte + [p])) > 97:
+            break
+        recorte.append(p)
+    return " ".join(recorte) + "...", True
+
+
+def resuelve_titulo_publicable(video_path):
+    """Título que REALMENTE se publica en el campo de YouTube, y de dónde sale.
+
+    Devuelve (titulo_para_youtube, titulo_largo, fuente).
+      - fuente == "corto":            _title_yt.txt existe, cabe en 100 tal cual.
+      - fuente == "corto_recortado":  _title_yt.txt existe pero superaba 100
+                                       (contrato roto aguas arriba) -> se recorta
+                                       igual, nunca se confía en que el otro
+                                       módulo cumplió su propio límite.
+      - fuente == "largo":            no hay título corto y el largo YA cabía
+                                       en 100 (caso raro, pero no se asume que
+                                       no pase).
+      - fuente == "largo_recortado":  no hay título corto -> comportamiento de
+                                       siempre: el largo recortado por palabras.
+
+    El título LARGO se devuelve siempre íntegro (sin recortar): es el que va al
+    principio de la descripción, exista o no el corto.
+    """
+    stem = os.path.basename(video_path)[: -len("_final.mp4")]
+    titulo_largo = _lee_titulo_txt(titulo_largo_path(video_path)) or stem
+
+    corto_bruto = _lee_titulo_txt(titulo_corto_path(video_path))
+    if corto_bruto:
+        titulo, recortado = _recorta_a_100(corto_bruto)
+        fuente = "corto_recortado" if recortado else "corto"
+        return titulo, titulo_largo, fuente
+
+    titulo, recortado = _recorta_a_100(titulo_largo)
+    fuente = "largo_recortado" if recortado else "largo"
+    return titulo, titulo_largo, fuente
 
 
 # ---------------------------------------------------------------- cuota
@@ -251,21 +332,28 @@ def subir_video(video_path, config, titulo=None, descripcion=None, tags=None,
 
     ycfg = config.get("youtube", {})
     if titulo is None:
-        stem = os.path.basename(video_path)[: -len("_final.mp4")]
-        tpath = os.path.join(os.path.dirname(video_path), f"{stem}_title.txt")
-        titulo = open(tpath, encoding="utf-8").read().strip() if os.path.exists(tpath) else stem
-    # YouTube corta a 100 caracteres; los títulos de este pipeline son de 20-35
-    # palabras y se pasan SIEMPRE, así que se recorta por palabra y el título
-    # completo va al principio de la descripción para no perderlo.
-    titulo_completo = titulo
-    if len(titulo) > 100:
-        recorte = []
-        for p in titulo.split():
-            if len(" ".join(recorte + [p])) > 97:
-                break
-            recorte.append(p)
-        titulo = " ".join(recorte) + "..."
-        logger.warning(f"Título recortado a 100 caracteres para YouTube: {titulo}")
+        # Título CORTO (<=100) si `_title_yt.txt` existe y no está vacío; si no,
+        # el comportamiento de siempre: el título LARGO recortado por palabras.
+        # El largo va SIEMPRE íntegro al principio de la descripción.
+        titulo, titulo_completo, fuente_titulo = resuelve_titulo_publicable(video_path)
+        if fuente_titulo == "corto":
+            logger.info(f"Título corto para YouTube ({len(titulo)} car.): {titulo}")
+        elif fuente_titulo == "corto_recortado":
+            logger.warning(
+                f"_title_yt.txt superaba 100 caracteres (contrato roto aguas "
+                f"arriba); recortado igual: {titulo}")
+        elif fuente_titulo == "largo_recortado":
+            logger.warning(f"Sin título corto: título largo recortado a 100 "
+                           f"caracteres para YouTube: {titulo}")
+        else:  # "largo"
+            logger.info(f"Sin título corto, pero el largo ya cabía ({len(titulo)} car.)")
+    else:
+        # Título pasado explícitamente por el caller: se recorta igual si hace
+        # falta, nunca se confía en que quien lo pasó cumplió el límite.
+        titulo_completo = titulo
+        titulo, recortado = _recorta_a_100(titulo)
+        if recortado:
+            logger.warning(f"Título recortado a 100 caracteres para YouTube: {titulo}")
 
     if descripcion is None:
         descripcion = _descripcion_por_defecto(titulo_completo, config)

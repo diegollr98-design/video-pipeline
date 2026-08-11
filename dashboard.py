@@ -933,7 +933,16 @@ with tab_subir:
             if _item["thumbnail"]:
                 st.image(_item["thumbnail"], width="stretch")
         with _c2:
-            st.markdown(f"**{_item['titulo'] or _item['stem']}**")
+            _titulo_largo = _item["titulo"] or _item["stem"]
+            _titulo_pub = _item.get("titulo_publicado") or _titulo_largo
+            _fuente_titulo = _item.get("titulo_publicado_fuente")
+
+            st.markdown(f"**{_titulo_pub}**")
+            st.caption(
+                f"↑ título de YouTube (se publica) — {len(_titulo_pub)} caracteres"
+            )
+            with st.expander(f"Título largo — va a la descripción ({len(_titulo_largo)} car.)"):
+                st.write(_titulo_largo)
             st.caption(f"`{os.path.basename(_item['video'])}` — {_item['tam_mb']} MB")
 
             if _item["subido"]:
@@ -947,11 +956,19 @@ with tab_subir:
                 )
                 continue
 
-            if len(_item["titulo"]) > 100:
+            if _fuente_titulo == "largo_recortado":
                 st.warning(
-                    f"El título tiene {len(_item['titulo'])} caracteres y YouTube corta "
-                    f"en 100: se recortará por palabras y el título completo irá al "
-                    f"principio de la descripción."
+                    f"Sin título corto para YouTube (`{_item['stem']}_title_yt.txt` "
+                    f"no existe o está vacío): el título largo tiene "
+                    f"{len(_titulo_largo)} caracteres y YouTube corta en 100, así que "
+                    f"se recortará por palabras y el título completo irá al principio "
+                    f"de la descripción."
+                )
+            elif _fuente_titulo == "corto_recortado":
+                st.warning(
+                    f"El título corto (`_title_yt.txt`, {len(_item.get('titulo_yt') or '')} "
+                    f"caracteres) supera el límite de 100 de YouTube: se ha recortado "
+                    f"igual antes de publicarlo."
                 )
 
             # El veredicto del auditor CORTA. Un aviso que no corta no defiende
