@@ -416,6 +416,18 @@ ANCLA_TOL = 0.40
 # (-0,517 s en una de 76 palabras). 0.8 es el punto donde deja de haber dano
 # colateral en ventanas largas, que son las que dominan el tiempo en pantalla.
 ANCLA_HUECO_MAX = 0.80
+# Velocidad IMPOSIBLE de pronunciar. Si el alineador mete las palabras de una
+# ventana a más de esto, su ritmo no es una medida: es un aplastamiento, y
+# trasladarlo deja los subtítulos vaciándose muy por delante de la voz.
+# Medido sobre dos producciones reales (110 y 214 ventanas): lo normal es p50
+# 209-225 wpm y p99 268-300; las patológicas fueron 530 wpm (44 palabras en 4,98 s
+# cuando edge-tts dice que la frase dura 13,49 s) y 833 wpm. El corte a 330
+# separa esas dos sin tocar ninguna ventana sana.
+ANCLA_WPM_MAX = 330
+# Velocidad típica medida, para repartir una ventana aplastada sobre una
+# duración creíble en vez de estirarla hasta llenar la ventana entera (que
+# incluye el silencio final y empujaría los subtítulos por detrás de la voz).
+ANCLA_WPM_TIPICO = 210
 
 
 def _mediana(valores):
@@ -580,7 +592,18 @@ def _validate_and_fix_alignment(words, sentences):
         w_last = words[indices[-1]]["end"]
         span = w_last - w_first
 
-        if span > 0.05:
+        # Ventana APLASTADA: el alineador metió las palabras a una velocidad que
+        # nadie puede pronunciar. Su ritmo no vale, así que se reparte sobre una
+        # duración creíble anclada al inicio real de la frase.
+        aplastada = span > 0.05 and len(indices) >= 5 and \
+            len(indices) / span * 60 > ANCLA_WPM_MAX
+        if aplastada:
+            logger.warning(
+                f"Ventana aplastada en t={s_start:.2f}s: {len(indices)} palabras en "
+                f"{span:.2f}s ({len(indices)/span*60:.0f} wpm). Se reparte."
+            )
+
+        if span > 0.05 and not aplastada:
             # TRASLACIÓN, no estiramiento. La ventana de edge-tts NO mide la
             # frase hablada: tila el audio completo e incluye el silencio que
             # viene DESPUÉS (medido: ventanas hasta 7.72s cuando la voz acaba en
@@ -638,8 +661,12 @@ def _validate_and_fix_alignment(words, sentences):
             char_lens = [max(len(words[i]["text"]), 1) for i in indices]
             total_chars = sum(char_lens)
             cursor = s_start
+            # Sobre la duración de la VOZ, no sobre la ventana entera: la
+            # ventana de edge-tts incluye el silencio posterior, y repartir
+            # sobre ella empuja cada palabra por detrás de cuando suena.
+            util = min(s_dur, len(indices) / ANCLA_WPM_TIPICO * 60) if aplastada else s_dur
             for j, idx in enumerate(indices):
-                w_dur = s_dur * char_lens[j] / total_chars
+                w_dur = util * char_lens[j] / total_chars
                 words[idx]["start"] = cursor
                 words[idx]["end"] = cursor + w_dur
                 cursor += w_dur
