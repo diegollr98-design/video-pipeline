@@ -35,6 +35,29 @@ ahora la seed nº 0 (bloqueante). Contexto auto-cargado: **935 → 1009 líneas*
 reglas nuevas, −21 de compresión). El `/optimize` de hoy **no ahorró tokens, los gastó**: es el precio
 de 4 promociones. El próximo debería ser de poda.
 
+## v0.5 — 2026-08-11 — Anclaje cerrado tras 3 versiones, subida a YouTube, y una causa aguas arriba 🔶
+**Qué se hizo:** El anclaje pasó por **tres versiones y dos la tumbó la medición**: (1) la del SEED,
+refutada aritméticamente; (2) la propia, que arreglaba el vídeo largo y **rompía 3 de 16 shorts**;
+(3) la actual, que distingue **ancla corrupta** (outlier aislado) de **deriva del alineador**
+(residuos crecientes en ventanas seguidas) y trata la **ventana aplastada** (>330 wpm). Además:
+subida a YouTube completa (privado · solo el largo · cola con OK en el dashboard), auditor de
+corrida `scripts/audit_run.py`, techo de bitrate, loudness a −14 LUFS, dedup de bloques, guarda de
+aperturas en títulos de shorts, y `components.html` deprecado fuera.
+**Incidentes:** [DEDUP-01] [ANCLA-02] [ANCLA-03] [ANCLA-04] [COMA-02] [INSTR-04].
+**Verificación:** contra transcripción independiente en **las dos** producciones reales — 10-ago:
+209 palabras / 60,7 s desincronizadas → **15 / 5,9 s**, p95 1,010 → 0,283; 11-ago: peor ventana
+**7,43 → 1,45 s**; solapes 2 → 0 en ambas. `/eval` con shorts: media 0,0723 → **0,043**, máx 0,400 →
+0,320, pausas 1 → 0 → **PASA**. Loudness −22,2 → −14,8 LUFS y bitrate 11,4 → 7,8 Mbps, ambos medidos
+por ejecución. Dashboard verificado con `AppTest`: 0 excepciones, 8 pestañas.
+**Lo que esto enseña:** (a) la **mediana esconde el defecto local** — una zona con mediana −0,110 s
+contenía 40 palabras a −7,4 s, y el mismo error se cometió dos veces; (b) un fix puede dar verde en
+el vídeo largo y romper el gemelo; (c) cuando Whisper y edge-tts discrepan 5 s, lo decide un
+instrumento que no dependa de Whisper (`silencedetect`) — y tenía razón edge-tts.
+**Pendiente:** `seeds/SEED_comas_y_cierre.md`. La causa aguas arriba: el modelo entregó una historia
+con **10 comas** (0,2/100) frente a 448, y de ahí salen encadenados 101 pausas inventadas, 202 wpm y
+ratio 0,79. **`target_wpm` NO es calibrable** (n=3: 160,6 / 177,2 / 202,3). La corrida de validación
+a escala quedó SIN hacer, y la subida espera a que Diego cree el `client_secret.json`.
+
 ## v0.4 — 2026-08-10 — ANCLA-01 arreglado y medido; dos premisas del SEED refutadas ✅
 **Qué se hizo:** `/seed-review` (TIER PANEL: 1 ciego + 3 críticos) sobre `SEED_sincronismo_produccion.md`
 tumbó dos cosas del plan: (a) su fix del anclaje estaba **refutado aritméticamente** —el paso 1.ª→2.ª
