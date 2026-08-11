@@ -428,6 +428,16 @@ ANCLA_WPM_MAX = 330
 # duración creíble en vez de estirarla hasta llenar la ventana entera (que
 # incluye el silencio final y empujaría los subtítulos por detrás de la voz).
 ANCLA_WPM_TIPICO = 210
+# Ventana con el INTERIOR FABRICADO [ANCLA-05]. Distinta de la aplastada: aquí
+# el ancla es CORRECTA y lo inservible es el ritmo de dentro, porque stable-ts
+# no midió esas palabras — las rellenó. La firma es una duración que se repite
+# idéntica en medio texto de la ventana MÁS al menos un hueco interno inventado.
+# Se exigen las dos cosas: el relleno uniforme solo es dañino cuando además trae
+# huecos, que son los que el cierre de abajo no puede quitar del todo.
+# Barrido sobre 268 ventanas de las dos producciones reales: marca 2, y las 2
+# son las realmente rotas (11-ago +1,450 s; 10-ago +0,507 s). 0 falsos positivos.
+ANCLA_UNIFORMIDAD_MIN = 0.50
+ANCLA_MIN_PALABRAS_FABRICADA = 5
 
 
 def _mediana(valores):
@@ -603,7 +613,44 @@ def _validate_and_fix_alignment(words, sentences):
                 f"{span:.2f}s ({len(indices)/span*60:.0f} wpm). Se reparte."
             )
 
-        if span > 0.05 and not aplastada:
+        # Ventana con el INTERIOR FABRICADO [ANCLA-05]. El ancla acierta (residuo
+        # −0,010 s contra transcripción independiente) pero el ritmo de dentro no
+        # es una medida: stable-ts rellenó. Medido en la producción del 11-ago,
+        # ventana t=128,55: 26 de 29 palabras con duración IDÉNTICA de 0,200 s
+        # (90%) y dos huecos internos inventados de 2,82 s y 2,62 s. El cierre de
+        # huecos de más abajo recorta el exceso pero RETIENE ANCLA_HUECO_MAX por
+        # hueco: 1,60 s de silencio inexistente que empujan tarde a las 27
+        # palabras siguientes (+1,45 s de mediana, 23 de 27 a más de 0,5 s).
+        # Ningún guardia lo cazaba: 143 wpm queda muy por debajo de
+        # ANCLA_WPM_MAX (que mide el lado contrario, el aplastado) y el ancla no
+        # está corrupta, así que la guarda del vecindario hace bien en no tocarla.
+        # Bajar ANCLA_HUECO_MAX no vale: barrido ya descartado (0,7 sube el p95 a
+        # 0,327; 0,6 mete −0,517 s en una ventana sana de 76 palabras).
+        durs = [round(words[i]["end"] - words[i]["start"], 3) for i in indices]
+        modal = max(set(durs), key=durs.count) if durs else 0.0
+        uniformidad = durs.count(modal) / len(durs) if durs else 0.0
+        huecos_inventados = sum(
+            1 for j in range(1, len(indices))
+            if words[indices[j]]["start"] - words[indices[j - 1]]["end"] > ANCLA_HUECO_MAX
+        )
+        fabricada = (
+            span > 0.05
+            and len(indices) >= ANCLA_MIN_PALABRAS_FABRICADA
+            and uniformidad >= ANCLA_UNIFORMIDAD_MIN
+            and huecos_inventados >= 1
+        )
+        if fabricada and not aplastada:
+            logger.warning(
+                f"Ventana con interior fabricado en t={s_start:.2f}s: {len(indices)} "
+                f"palabras, {uniformidad:.0%} con duracion identica de {modal:.3f}s y "
+                f"{huecos_inventados} hueco(s) inventado(s). Se reparte."
+            )
+
+        # El ritmo de Whisper no sirve ni aplastado ni fabricado: en los dos casos
+        # se reparte sobre una duración creíble en vez de trasladar su ritmo.
+        ritmo_inservible = aplastada or fabricada
+
+        if span > 0.05 and not ritmo_inservible:
             # TRASLACIÓN, no estiramiento. La ventana de edge-tts NO mide la
             # frase hablada: tila el audio completo e incluye el silencio que
             # viene DESPUÉS (medido: ventanas hasta 7.72s cuando la voz acaba en
@@ -664,7 +711,7 @@ def _validate_and_fix_alignment(words, sentences):
             # Sobre la duración de la VOZ, no sobre la ventana entera: la
             # ventana de edge-tts incluye el silencio posterior, y repartir
             # sobre ella empuja cada palabra por detrás de cuando suena.
-            util = min(s_dur, len(indices) / ANCLA_WPM_TIPICO * 60) if aplastada else s_dur
+            util = min(s_dur, len(indices) / ANCLA_WPM_TIPICO * 60) if ritmo_inservible else s_dur
             for j, idx in enumerate(indices):
                 w_dur = util * char_lens[j] / total_chars
                 words[idx]["start"] = cursor
