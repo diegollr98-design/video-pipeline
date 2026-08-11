@@ -10,6 +10,20 @@ logger = logging.getLogger(__name__)
 
 WORDS_PER_BLOCK = 2000  # Each API call generates ~2000 words reliably
 
+# --- Garantía de desenlace [CIERRE-01] ---------------------------------------
+# La historia se quedaba sin final por DOS caminos distintos, los dos medidos:
+#   (a) el bucle de `generate_story` sale por su condición de cabecera, así que
+#       un bloque de "continuación" que cruce el 85% del objetivo lo termina sin
+#       que se haya pedido NUNCA el desenlace. Pasó en 1 de las 3 corridas
+#       largas del log (11-ago: 5334 palabras acabando a mitad de escena).
+#   (b) `_truncate_to_words` se quedaba con las PRIMERAS max_words palabras, o
+#       sea que tiraba el final. En la corrida del 10-ago descartó 1867 palabras
+#       (26%), el epílogo entre ellas.
+# Es §17 en estado puro: no había ningún `if` que forzara el cierre.
+_CIERRE_PALABRAS = 500       # tamaño que se pide para el bloque de desenlace
+_CIERRE_MIN_PALABRAS = 120   # por debajo de esto no es un desenlace, es un resto
+_CIERRE_PRESERVADO = 600     # palabras finales que el truncado NUNCA descarta
+
 
 def _load_prompt_template(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -533,6 +547,7 @@ def generate_story(target_words, style, config):
     # Blocks 2+: Continuations
     max_attempts = num_blocks + 2  # allow a couple extra attempts
     block = 2
+    cierre_escrito = False  # el bloque de desenlace se pidió Y devolvió texto
 
     while word_count < target_words * 0.85 and block <= max_attempts:
         words_remaining = target_words - word_count
@@ -554,6 +569,10 @@ def generate_story(target_words, style, config):
 
         if continuation:
             story = story.strip() + "\n\n" + continuation.strip()
+            # Ojo: `is_final` solo dice qué se PIDIÓ. Si el bloque se descartó por
+            # duplicado, se pidió el cierre y no hay cierre.
+            if is_final:
+                cierre_escrito = True
         word_count = len(story.split())
         logger.info(f"Bloque {block}: total acumulado {word_count} palabras")
 
@@ -562,7 +581,34 @@ def generate_story(target_words, style, config):
         if is_final:
             break
 
-    # Truncate if overshooting
+    # GARANTÍA DE DESENLACE (§17). Sin este `if`, una historia que se pasa de
+    # largo en un bloque de continuación sale del bucle a mitad de escena y el
+    # vídeo de 30 min se publica sin final. No es hipotético: 1 de 3 corridas.
+    if not cierre_escrito:
+        logger.warning(
+            f"La historia llego a {word_count} palabras SIN bloque de cierre "
+            f"(el modelo se paso de largo en una continuacion). Pidiendo el "
+            f"desenlace: ~{_CIERRE_PALABRAS} palabras."
+        )
+        cierre = _generate_continuation(
+            title, story, word_count + _CIERRE_PALABRAS, _CIERRE_PALABRAS, True, config
+        )
+        cierre, _ = _strip_duplicated_opening(story, cierre.strip())
+
+        if len(cierre.split()) < _CIERRE_MIN_PALABRAS:
+            # §12/§13: nada de fallback mudo. Un vídeo de 30 min sin final no es
+            # publicable, y nadie mira la salida. main.py captura esto por vídeo.
+            raise RuntimeError(
+                f"No se pudo cerrar la historia: el bloque de desenlace devolvio "
+                f"{len(cierre.split())} palabras (minimo {_CIERRE_MIN_PALABRAS}). "
+                f"Se aborta el video en vez de publicarlo sin final."
+            )
+
+        story = story.strip() + "\n\n" + cierre.strip()
+        word_count = len(story.split())
+        logger.info(f"Cierre anadido: {len(cierre.split())} palabras -> {word_count} totales")
+
+    # Truncate if overshooting (conservando el desenlace: ver _truncate_to_words)
     if word_count > target_words * 1.2:
         logger.info(f"Truncando de {word_count} a ~{target_words} palabras")
         story = _truncate_to_words(story, target_words)
@@ -572,17 +618,93 @@ def generate_story(target_words, style, config):
     return title, story
 
 
-def _truncate_to_words(text, max_words):
-    sentences = text.replace("!", "!|").replace("?", "?|").replace(".", ".|").split("|")
-    result = []
-    count = 0
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        words = sentence.split()
-        if count + len(words) > max_words:
+def _partir_en_frases(texto):
+    """Parte en (frase, separador) de forma REVERSIBLE.
+
+    `"".join(f + s for f, s in _partir_en_frases(t)) == t` para cualquier t.
+    Importa porque la versión anterior rejuntaba con `" ".join(...)` y eso:
+      - convertía "4.500" en "4. 500" (partía en el punto de millar), y
+      - borraba TODOS los saltos de párrafo. edge-tts trocea el texto cada 4096
+        bytes eligiendo el punto de corte y prioriza los saltos de línea; sin
+        ellos los cortes caen a mitad de frase y se oyen como un parón
+        (medido: 2 de 2 cortes malos sin saltos, 0 de 2 con ellos).
+    El lookahead `(?=\\s|$)` es lo que impide partir el punto de millar.
+    """
+    piezas = []
+    pos = 0
+    for m in re.finditer(r"[.!?]+(?=\s|$)", texto):
+        fin = m.end()
+        sep = re.match(r"\s*", texto[fin:]).group(0)
+        piezas.append((texto[pos:fin], sep))
+        pos = fin + len(sep)
+    if pos < len(texto):
+        piezas.append((texto[pos:], ""))
+    return piezas
+
+
+def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
+    """Recorta a ~max_words palabras SIN decapitar la historia.
+
+    La versión anterior se quedaba con las PRIMERAS max_words palabras, o sea
+    que tiraba el final. Medido en la corrida del 10-ago: la historia llegó a
+    7157 palabras, el bloque `is_final` escribió su epílogo, y esto descartó
+    1867 (26%) — el epílogo dentro. Que aquello acabara en algo que parece un
+    cierre fue suerte de dónde cayó el corte, no diseño.
+
+    Ahora se recorta el CUERPO y se conservan las últimas `preservar_cierre`
+    palabras (redondeadas a frase entera). Introduce un salto en la narración,
+    que es peor que no recortar y mucho mejor que quedarse sin desenlace.
+    """
+    total = len(text.split())
+    if total <= max_words:
+        return text
+
+    piezas = _partir_en_frases(text)
+    if not piezas:
+        return text
+
+    # El cierre nunca puede comerse la historia. Sin este tope, el fixture de
+    # /eval (3 min -> 480 palabras) se quedaba SOLO con el epílogo, porque las
+    # 600 palabras preservadas ya superan su objetivo entero. Un tercio deja
+    # sitio a principio y final en cualquier régimen; en producción (5344) el
+    # tope no muerde y `preservar_cierre` manda.
+    preservar_cierre = max(1, min(preservar_cierre, max_words // 3))
+
+    # 1. El cierre: frases desde el final hasta juntar `preservar_cierre` palabras.
+    ini_cierre = len(piezas)
+    palabras_cierre = 0
+    while ini_cierre > 0 and palabras_cierre < preservar_cierre:
+        ini_cierre -= 1
+        palabras_cierre += len(piezas[ini_cierre][0].split())
+
+    cierre = "".join(f + s for f, s in piezas[ini_cierre:]).strip()
+
+    # 2. El cuerpo: lo que quepa por delante dejándole sitio al cierre.
+    presupuesto = max_words - palabras_cierre
+    if presupuesto <= 0:
+        logger.warning(
+            f"Truncado: el desenlace solo ({palabras_cierre} palabras) ya supera el "
+            f"objetivo de {max_words}. Se conserva entero y se descarta el cuerpo."
+        )
+        return cierre
+
+    fin_cuerpo = 0
+    palabras_cuerpo = 0
+    while fin_cuerpo < ini_cierre:
+        n = len(piezas[fin_cuerpo][0].split())
+        if palabras_cuerpo + n > presupuesto:
             break
-        result.append(sentence)
-        count += len(words)
-    return " ".join(result)
+        palabras_cuerpo += n
+        fin_cuerpo += 1
+
+    cuerpo = "".join(f + s for f, s in piezas[:fin_cuerpo]).rstrip()
+    if not cuerpo:
+        return cierre
+
+    logger.warning(
+        f"Truncado: se descartan {total - palabras_cuerpo - palabras_cierre} palabras "
+        f"del CUERPO (frases {fin_cuerpo}-{ini_cierre} de {len(piezas)}). Se conservan "
+        f"las ultimas {palabras_cierre} para no quedarse sin desenlace. Esto introduce "
+        f"un SALTO en la narracion en ese punto."
+    )
+    return cuerpo + "\n\n" + cierre
