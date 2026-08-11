@@ -158,6 +158,11 @@ def compose(video_path, audio_path, ass_path, output_path, config,
         *map_audio,
         "-c:v", codec,
         *quality_args,
+        # Normalización de sonoridad. Medido: el vídeo salía a -23,4 LUFS y
+        # YouTube normaliza a -14 SOLO BAJANDO, nunca subiendo: publicarlo así
+        # es sonar ~9 dB por debajo de la competencia en la misma pantalla.
+        *(["-af", f"loudnorm=I={vid_cfg.get('loudness_lufs', -14)}:TP=-1.5:LRA=11"]
+          if vid_cfg.get("loudness_lufs", -14) else []),
         "-c:a", vid_cfg["audio_codec"],
         "-b:a", vid_cfg["audio_bitrate"],
         "-shortest",

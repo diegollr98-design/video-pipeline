@@ -49,6 +49,7 @@ video:
   preset: "p2"                   # nvenc: p1(fastest)-p7(best) — p2 = rapido, YouTube recomprime igual
   max_bitrate: "8M"              # techo: sin el, 720p60 salia a 14 Mbps = 3,6 GB/video (YouTube recomienda 7,5)
   bufsize: "16M"
+  loudness_lufs: -14           # YouTube normaliza a -14 LUFS y SOLO BAJA; sin esto salia a -23
   loop_gameplay: true
 
 story:

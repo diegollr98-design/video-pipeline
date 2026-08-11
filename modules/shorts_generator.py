@@ -292,6 +292,10 @@ def _compose_short(gameplay_path, audio_path, ass_path, output_path,
         # lo que YouTube recomienda para 1080p60 vertical. Ver video_composer.
         "-c:v", "h264_nvenc", "-cq", "23", "-preset", "p4",
         "-maxrate", "12M", "-bufsize", "24M",
+        # Mismo motivo que en video_composer: YouTube y TikTok normalizan a -14
+        # LUFS BAJANDO, nunca subiendo. Medido en el audio real de un short:
+        # -22,2 -> -14,8 LUFS.
+        "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest",
         "-y", output_path,

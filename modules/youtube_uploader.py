@@ -171,7 +171,8 @@ def puede_subir(config):
     minutos de red, así que se pregunta antes.
     """
     state = load_state(config)
-    limite = config.get("competition", {}).get("daily_quota", 10000)
+    limite = ((config.get("competition") or {}).get("quota") or {}).get(
+        "daily_limit", 10000)
     meter = QuotaMeter(state, limite)
     coste = QUOTA_COST["videosInsert"]
     if coste > meter.remaining():
@@ -184,7 +185,8 @@ def puede_subir(config):
 
 def _cobra_cuota(config):
     state = load_state(config)
-    limite = config.get("competition", {}).get("daily_quota", 10000)
+    limite = ((config.get("competition") or {}).get("quota") or {}).get(
+        "daily_limit", 10000)
     meter = QuotaMeter(state, limite)
     meter.charge("videosInsert")       # lanza QuotaExhausted si no cabe
     save_state(state, config)
