@@ -72,6 +72,31 @@ en disputa, otro escenario y otro tipo de desenlace. No basta con cambiar el
 final ni con cambiar el sexo del culpable: cambia el CONFLICTO entero."""
 
 
+# Cuántos títulos seguidos con la MISMA palabra inicial se toleran antes de
+# exigir otra apertura. Medido sobre los 50 títulos de la primera tanda real:
+# 50/50 empezaban por "Mi", 33/50 con "vendió"/"robó". Los títulos eran distintos
+# entre sí (Jaccard máx 0,210, 24 parentescos), pero la PLANTILLA era una sola, y
+# una pared de 50 miniaturas que empiezan igual lee como granja de contenido. En
+# el corpus de competencia escaneado el ratio de primera persona era 0% en un
+# competidor real de 124k subs y 25% en el líder, frente al 75% de la granja de
+# drama doblado. No se prohíbe la primera persona (es el formato del nicho): solo
+# se corta la racha.
+RACHA_MAX_APERTURA = 5
+
+
+def _apertura(titulo):
+    palabras = titulo.strip().split()
+    return palabras[0].lower().strip('¿¡"\'') if palabras else ""
+
+
+def _apertura_agotada(avoid):
+    """True si los últimos títulos empiezan TODOS por la misma palabra."""
+    if not avoid or len(avoid) < RACHA_MAX_APERTURA:
+        return None
+    ultimas = [_apertura(t) for t in avoid[-RACHA_MAX_APERTURA:]]
+    return ultimas[0] if ultimas[0] and len(set(ultimas)) == 1 else None
+
+
 def _generate_short_story(style, config, avoid=None):
     """Generate a micro-story for a short (~200 words).
 
@@ -83,6 +108,17 @@ def _generate_short_story(style, config, avoid=None):
 
     target_words = 200
     prompt = template.format(target_words=target_words, style=style) + _build_avoid_block(avoid)
+
+    racha = _apertura_agotada(avoid)
+    if racha:
+        prompt += (
+            f"\n\nAPERTURA OBLIGATORIAMENTE DISTINTA: los {RACHA_MAX_APERTURA} últimos "
+            f"títulos empiezan por «{racha}». El tuyo NO puede empezar por esa palabra. "
+            f"Empieza por otra cosa — el hecho, el momento o el lugar: «Descubrí que...», "
+            f"«El día que...», «Cuando...», «Me echaron de...», «Nadie sabía que...». "
+            f"La historia sigue siendo en primera persona; lo que cambia es por dónde "
+            f"empieza el título."
+        )
 
     # Mismo guardia que en las historias largas: nemotron suelta a veces su
     # razonamiento y acababa como título del short, con un vídeo de 4,5s.
@@ -100,6 +136,12 @@ def _generate_short_story(style, config, avoid=None):
         title, speech = _parse_title_and_speech(raw)
         ok, motivo = _validar_salida(title, speech, min_palabras_titulo=8,
                                      min_palabras_speech=80)
+        # La apertura se PIDE en el prompt y se IMPONE aquí. Pedirla no basta:
+        # es la cuarta vez en este repo que una garantía en prosa no se cumple
+        # (comas, título, variedad de shorts). El último intento se acepta igual
+        # —un título repetitivo es mucho menos grave que quedarse sin short—.
+        if ok and racha and _apertura(title) == racha and intento < intentos - 1:
+            ok, motivo = False, f"vuelve a empezar por «{racha}» (racha de {RACHA_MAX_APERTURA})"
         if ok:
             break
         logger.warning(f"Short descartado ({motivo}); reintento {intento + 2}/{intentos}")
