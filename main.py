@@ -290,7 +290,7 @@ def produce_video(chunk_path, chunk_duration, video_num, config, args):
     return True
 
 
-def _auditar_salida(config, args, chunk_dur):
+def _auditar_salida(config, args, chunk_dur, stems=None):
     """Corre `scripts/audit_run.py` y deja su veredicto junto a cada vídeo.
 
     Como SUBPROCESO a propósito: el auditor carga whisper para transcribir de
@@ -317,6 +317,12 @@ def _auditar_salida(config, args, chunk_dur):
             cmd += ["--shorts-dir", shorts_dir]
         if chunk_dur:
             cmd += ["--chunk-dur", f"{chunk_dur:.1f}"]
+        # Solo lo producido en ESTA corrida. Sin esto el auditor re-transcribe
+        # con whisper todos los videos acumulados en output/, que en produccion
+        # son de 30 min cada uno: minutos de reloj por cada video viejo, cada
+        # vez, para reescribir un veredicto que ya existia.
+        if stems:
+            cmd += ["--stem", ",".join(stems)]
 
         logger.info(f"Auditando la salida: {' '.join(cmd[1:])}")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
@@ -428,6 +434,7 @@ def main():
             video_num = max(nums) + 1
 
     ultimo_chunk_dur = None
+    stems_producidos = []
     while True:
         chunk_path, chunk_duration = take_chunk(config)
         if chunk_path is None:
@@ -438,6 +445,7 @@ def main():
         try:
             if produce_video(chunk_path, chunk_duration, video_num, config, args):
                 success += 1
+                stems_producidos.append(f"video_{video_num:03d}")
 
                 # Phase 2b: Generate shorts from the same chunk
                 if not args.dry_run and config.get("shorts", {}).get("enabled", False) and not args.no_shorts:
@@ -463,7 +471,7 @@ def main():
     # vídeo se queda sin veredicto y por tanto FUERA de la cola de subida, que
     # es el lado barato del error (§16).
     if success and not args.dry_run and not args.no_audit:
-        _auditar_salida(config, args, ultimo_chunk_dur)
+        _auditar_salida(config, args, ultimo_chunk_dur, stems_producidos)
 
     # Show remaining pool
     pool = get_pool_status(config)

@@ -160,6 +160,19 @@ def rachas_aplastadas(ass_words, dur_max=0.09, racha_min=4):
     return peor, salida
 
 
+def _busca_pipeline_log(desde):
+    """`pipeline.log` mirando hacia arriba desde el directorio temporal."""
+    candidatos = [
+        os.path.join(desde, "..", "pipeline.log"),      # temp_dir = ./temp
+        os.path.join(desde, "..", "..", "pipeline.log"),  # temp_dir = ./test_e2e/temp
+        "pipeline.log",
+    ]
+    for c in candidatos:
+        if os.path.exists(c):
+            return c
+    return candidatos[0]
+
+
 def cierre_narrativo(log_path, stem):
     """¿Se pidió y se escribió el bloque de DESENLACE de esta historia?
 
@@ -288,8 +301,13 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         fallos.append(f"racha de {peor_racha} palabras ilegibles (subtítulo en el suelo)")
 
     # --- cierre narrativo [CIERRE-01]
-    cerrado, motivo = cierre_narrativo(os.path.join(os.path.dirname(ass) or ".", "..", "pipeline.log"),
-                                       os.path.basename(video)[: -len("_final.mp4")])
+    # El log vive en la RAÍZ del repo, no junto al temp. Con `temp_dir: ./temp`
+    # el `..` acertaba por casualidad; con el del fixture (`./test_e2e/temp`)
+    # apuntaba a `test_e2e/pipeline.log`, que no existe, y la comprobación salía
+    # como "no se puede comprobar" en todas las corridas del gate.
+    cerrado, motivo = cierre_narrativo(
+        _busca_pipeline_log(os.path.dirname(ass) or "."),
+        os.path.basename(video)[: -len("_final.mp4")])
     if cerrado is None:
         print(f"{AVISO} cierre narrativo: {motivo}")
     else:
@@ -490,13 +508,18 @@ def main():
                     help="cuántos shorts medir de sincronismo (0 = ninguno)")
     ap.add_argument("--chunk-dur", type=float, help="duración del chunk, para el ratio")
     ap.add_argument("--model", default="small")
-    ap.add_argument("--stem", help="auditar SOLO este vídeo (ej: video_001)")
+    ap.add_argument("--stem", help="auditar SOLO estos vídeos, separados por comas "
+                                   "(ej: video_007,video_008). Sin esto audita todos "
+                                   "los de output/, que en produccion es re-transcribir "
+                                   "el catalogo entero con whisper")
     args = ap.parse_args()
+
+    solo = {s.strip() for s in args.stem.split(",")} if args.stem else None
 
     fallos = []
     for video in sorted(glob.glob(os.path.join(args.output, "*_final.mp4"))):
         stem = os.path.basename(video)[: -len("_final.mp4")]
-        if args.stem and stem != args.stem:
+        if solo and stem not in solo:
             continue
         ass = os.path.join(args.temp, f"{stem}_subs.ass")
         story = os.path.join(args.temp, f"{stem}_story.txt")
