@@ -954,7 +954,35 @@ with tab_subir:
                     f"principio de la descripción."
                 )
 
-            _dis = (not _cuota_ok) or (not os.path.exists(_item["video"]))
+            # El veredicto del auditor CORTA. Un aviso que no corta no defiende
+            # de nada: el pipeline es autónomo y nadie lee el log en tiempo real.
+            _aud = _item.get("auditoria") or {}
+            if not _item.get("publicable"):
+                _fallos = _aud.get("fallos") or ["sin veredicto"]
+                if not _aud.get("medido"):
+                    st.error(
+                        "**Sin auditar.** Este vídeo no se ha medido, así que no se "
+                        "sabe si es publicable — y eso no es lo mismo que estar bien. "
+                        "Corre `python scripts/audit_run.py --keep-temp` sobre la "
+                        "corrida, o relánzala con `--keep-temp`."
+                    )
+                else:
+                    st.error(
+                        "**No publicable — la auditoría encontró "
+                        f"{len(_fallos)} defecto(s) MEDIBLES:**\n\n"
+                        + "\n".join(f"- {x}" for x in _fallos)
+                    )
+                st.caption(
+                    f"Veredicto de {_aud.get('fecha', '?')}. Si aun así quieres "
+                    f"subirlo, borra `{os.path.basename(_item['video'])[:-len('_final.mp4')]}"
+                    f"_audit.json` — pero mira antes lo que dice."
+                )
+            elif _aud.get("fecha"):
+                st.success(f"Auditoría en verde ({_aud['fecha']}): sin defectos MEDIBLES. "
+                           f"Que enganche o no, eso lo juzgas tú.")
+
+            _dis = ((not _cuota_ok) or (not os.path.exists(_item["video"]))
+                    or (not _item.get("publicable")))
             if st.button("📤 Subir en privado", key=f"subir_{_item['stem']}", disabled=_dis):
                 _barra = st.progress(0.0, text="Iniciando subida...")
 

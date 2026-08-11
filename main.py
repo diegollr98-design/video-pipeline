@@ -280,6 +280,47 @@ def produce_video(chunk_path, chunk_duration, video_num, config, args):
     return True
 
 
+def _auditar_salida(config, args, chunk_dur):
+    """Corre `scripts/audit_run.py` y deja su veredicto junto a cada vídeo.
+
+    Como SUBPROCESO a propósito: el auditor carga whisper para transcribir de
+    forma independiente, y una excepción suya no puede llevarse por delante una
+    corrida de 2 h. Si falla, el vídeo se queda SIN veredicto, y sin veredicto
+    el dashboard no lo ofrece para subir: el default cae del lado barato.
+    """
+    import subprocess
+
+    cmd = [sys.executable, os.path.join("scripts", "audit_run.py"),
+           "--output", config["paths"]["output_dir"],
+           "--temp", config["paths"]["temp_dir"],
+           "--shorts", str(args.audit_shorts)]
+    if config.get("shorts", {}).get("shorts_dir"):
+        cmd += ["--shorts-dir", config["shorts"]["shorts_dir"]]
+    if chunk_dur:
+        cmd += ["--chunk-dur", f"{chunk_dur:.1f}"]
+
+    logger.info(f"Auditando la salida: {' '.join(cmd[1:])}")
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
+                           encoding="utf-8", errors="replace")
+        for linea in (r.stdout or "").splitlines():
+            logger.info(f"[audit] {linea}")
+        if r.returncode != 0:
+            # El auditor devuelve 1 cuando encuentra defectos: eso NO es un
+            # error del auditor, es su trabajo.
+            logger.warning("[audit] la salida tiene defectos MEDIBLES: revisa el "
+                           "veredicto antes de publicar")
+        if r.stderr:
+            logger.warning(f"[audit] stderr: {r.stderr[-800:]}")
+    except subprocess.TimeoutExpired:
+        logger.error("[audit] la auditoria excedio 1 h y se corto. Los videos sin "
+                     "veredicto NO entran en la cola de subida.")
+    except Exception as e:
+        # Marcar, no matar: la corrida ya está hecha y no se tira por esto.
+        logger.error(f"[audit] no se pudo auditar ({type(e).__name__}: {e}). Los "
+                     f"videos sin veredicto NO entran en la cola de subida.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="YouTube Automation - Reddit Stories Pipeline")
     parser.add_argument("--video", help="Procesar un video específico en vez de todos en input/")
@@ -293,6 +334,11 @@ def main():
                              "_story.txt son lo que se mide, y cleanup_temp los destruía")
     parser.add_argument("--no-shorts", action="store_true",
                         help="Desactiva la generación de shorts en esta corrida")
+    parser.add_argument("--no-audit", action="store_true",
+                        help="No auditar la salida al terminar. OJO: sin veredicto, "
+                             "el dashboard NO ofrece el vídeo para subir")
+    parser.add_argument("--audit-shorts", type=int, default=2,
+                        help="cuántos shorts mide la auditoría de sincronismo (0 = ninguno)")
     parser.add_argument("--scan-competition", action="store_true",
                         help="Solo analiza la competencia (no produce videos) y debate qué atacar")
     parser.add_argument("--no-discover", action="store_true",
@@ -363,11 +409,13 @@ def main():
         if nums:
             video_num = max(nums) + 1
 
+    ultimo_chunk_dur = None
     while True:
         chunk_path, chunk_duration = take_chunk(config)
         if chunk_path is None:
             logger.info("No hay suficiente gameplay en el pool para otro video")
             break
+        ultimo_chunk_dur = chunk_duration
 
         try:
             if produce_video(chunk_path, chunk_duration, video_num, config, args):
@@ -388,6 +436,16 @@ def main():
                 os.remove(chunk_path)
 
     logger.info(f"Pipeline finalizado: {success} videos producidos")
+
+    # AUDITORÍA de la salida, ANTES de cleanup_temp (que borra el .ass y el
+    # _story.txt que son justo lo que se mide). Escribe el veredicto junto a
+    # cada vídeo; el dashboard no ofrece para subir lo que no esté en verde.
+    #
+    # MARCAR, NO MATAR: si el auditor peta, la corrida no se pierde — pero el
+    # vídeo se queda sin veredicto y por tanto FUERA de la cola de subida, que
+    # es el lado barato del error (§16).
+    if success and not args.dry_run and not args.no_audit:
+        _auditar_salida(config, args, ultimo_chunk_dur)
 
     # Show remaining pool
     pool = get_pool_status(config)

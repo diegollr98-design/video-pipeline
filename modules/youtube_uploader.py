@@ -151,6 +151,7 @@ def pendientes(config):
         if os.path.exists(titulo_txt):
             with open(titulo_txt, encoding="utf-8") as f:
                 titulo = f.read().strip()
+        auditoria = lee_veredicto(ruta)
         items.append({
             "video": ruta,
             "stem": stem,
@@ -159,8 +160,33 @@ def pendientes(config):
             "tam_mb": round(os.path.getsize(ruta) / 1024 / 1024, 1),
             "subido": ya_subido(ruta),
             "marca": lee_marca(ruta),
+            "auditoria": auditoria,
+            "publicable": bool(auditoria.get("ok")),
         })
     return items
+
+
+def lee_veredicto(video):
+    """Veredicto de `scripts/audit_run.py` para este vídeo.
+
+    Sin fichero, `ok` es False: un vídeo NO auditado no es un vídeo sano, es un
+    vídeo desconocido, y el default tiene que caer del lado barato (§16). Es
+    justo lo que fallaba antes — el aviso se imprimía en un log que nadie lee
+    mientras el vídeo seguía ofreciéndose para publicar.
+    """
+    ruta = video[: -len("_final.mp4")] + "_audit.json"
+    if not os.path.exists(ruta):
+        return {"ok": False, "medido": False,
+                "fallos": ["sin auditar: no existe el veredicto"]}
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            d = json.load(f)
+        d.setdefault("ok", False)
+        d.setdefault("fallos", [])
+        return d
+    except Exception as e:
+        return {"ok": False, "medido": False,
+                "fallos": [f"veredicto ilegible ({type(e).__name__})"]}
 
 
 # ---------------------------------------------------------------- cuota

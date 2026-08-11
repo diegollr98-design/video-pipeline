@@ -419,6 +419,24 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
     return fallos
 
 
+def escribe_veredicto(video, fallos, medido=True):
+    """Deja el veredicto JUNTO al vídeo, para que algo pueda actuar sobre él.
+
+    Un aviso impreso en un log no defiende de nada: este pipeline es autónomo y
+    nadie lee el log en tiempo real (§12). El dashboard lee este fichero y no
+    ofrece para subir un vídeo que no lo tenga en verde.
+    """
+    destino = video[: -len("_final.mp4")] + "_audit.json"
+    with open(destino, "w", encoding="utf-8") as f:
+        json.dump({
+            "ok": medido and not fallos,
+            "medido": medido,
+            "fallos": fallos,
+            "fecha": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        }, f, ensure_ascii=False, indent=2)
+    return destino
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -429,17 +447,28 @@ def main():
                     help="cuántos shorts medir de sincronismo (0 = ninguno)")
     ap.add_argument("--chunk-dur", type=float, help="duración del chunk, para el ratio")
     ap.add_argument("--model", default="small")
+    ap.add_argument("--stem", help="auditar SOLO este vídeo (ej: video_001)")
     args = ap.parse_args()
 
     fallos = []
     for video in sorted(glob.glob(os.path.join(args.output, "*_final.mp4"))):
         stem = os.path.basename(video)[: -len("_final.mp4")]
+        if args.stem and stem != args.stem:
+            continue
         ass = os.path.join(args.temp, f"{stem}_subs.ass")
         story = os.path.join(args.temp, f"{stem}_story.txt")
         if not os.path.exists(ass):
-            print(f"{AVISO} sin .ass para {stem}: ¿corriste sin --keep-temp?")
+            # Sin .ass no se ha MEDIDO nada. Eso no es "sano": es desconocido, y
+            # el default tiene que caer del lado barato (§16).
+            print(f"{AVISO} sin .ass para {stem}: ¿corriste sin --keep-temp? "
+                  f"NO se ha auditado, así que NO entra en la cola de subida")
+            escribe_veredicto(video, ["no auditado: falta el .ass (¿sin --keep-temp?)"],
+                              medido=False)
+            fallos.append(f"{stem} sin auditar")
             continue
-        fallos += audita_video(video, ass, story, args.chunk_dur, args.model)
+        f_video = audita_video(video, ass, story, args.chunk_dur, args.model)
+        escribe_veredicto(video, f_video)
+        fallos += f_video
 
     fallos += audita_shorts(args.shorts_dir, args.temp, args.shorts, args.model)
 
