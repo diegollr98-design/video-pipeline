@@ -153,10 +153,16 @@ Las 28 palabras tienen duración **exactamente 0,050 s** = `paso_min` en `tts_en
 **sí mejoró** — este es un modo de fallo distinto que quedó debajo.
 
 **Qué hacer:**
-1. **Detector de ventana DESPLAZADA** (falta: hay guardia de aplastada y de ancla corrupta, ninguna de
-   "la ventana entera está en otro sitio"). Señales gratis: no-monotonía dentro de la ventana, y span
-   crudo fuera del `[start, start+duration]` de edge-tts. Fallback: repartir sobre `ANCLA_WPM_TIPICO`
-   (ese camino ya existe, `tts_engine.py:667`).
+1. ~~Detector de ventana DESPLAZADA~~ — **HECHO, y mi hipótesis era falsa.** Re-medido con el código de
+   hoy: ANCLA-04 ya cierra la ventana aplastada (mediana −3,990 → +0,041 s, la racha de 28 palabras a
+   `paso_min` desaparece, el hueco de 5,07 s de voz sin subtítulo se cierra). Lo que quedaba **no** era
+   una ventana desplazada: **el ancla acierta a 0,010 s**. Era el **INTERIOR FABRICADO** — stable-ts
+   rellenó 26 de 29 palabras con duración idéntica de 0,200 s y metió dos huecos inventados de 2,82 s y
+   2,62 s, de los que el cierre de huecos **retiene 0,80 s cada uno** (= 1,60 s de silencio inexistente
+   que empuja tarde a las 27 palabras siguientes). Arreglado en `07e4e85` [ANCLA-05]: detector
+   *uniformidad ≥50% **Y** ≥1 hueco inventado* (2 de 268 ventanas, 0 falsos positivos), enrutado a la
+   rama de reparto que ya existía. Medido: 11-ago **+1,450 → +0,129 s**, 10-ago **+0,507 → −0,068 s**,
+   **0 ventanas empeoran**, invariantes intactos (fin del título Δ 0,0000 s).
 2. **`_enforce_monotonic` con dientes (§12).** Hoy aplasta 41 palabras y escribe un warning. Debe
    marcar la salida: racha de ≥4 palabras en el suelo → o se rechaza, o se omiten esas palabras
    (pantalla limpia > parpadeo a 1200 wpm).

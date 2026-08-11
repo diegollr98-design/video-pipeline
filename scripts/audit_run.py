@@ -36,6 +36,12 @@ from scripts.eval_sync import (  # noqa: E402
 
 OK, MAL, AVISO = "  OK  ", " FALLA", " AVISO"
 
+_RE_NORM = re.compile(r"[^\wáéíóúñüÁÉÍÓÚÑÜ]+", re.UNICODE)
+
+
+def _norm_pal(w):
+    return _RE_NORM.sub("", w.lower())
+
 
 def _ffprobe(path, campos, stream=False):
     sel = ["-select_streams", "v:0"] if stream else []
@@ -55,6 +61,126 @@ def loudness(path):
     m = re.findall(r"I:\s+(-?\d+\.\d+)\s+LUFS", r.stderr)
     p = re.findall(r"Peak:\s+(-?\d+\.\d+)\s+dBFS", r.stderr)
     return (float(m[-1]) if m else None), (float(p[-1]) if p else None)
+
+
+def _silencios(path, umbral_db=-35, dur_min=0.25):
+    """Tramos de silencio del audio, medidos con `silencedetect`.
+
+    Instrumento que NO depende de Whisper: cuando el alineador y edge-tts se
+    contradijeron en 5 s, esto fue lo que decidió quién mentía [ANCLA-03].
+    """
+    r = subprocess.run(
+        ["ffmpeg", "-nostdin", "-i", path, "-af",
+         f"silencedetect=noise={umbral_db}dB:d={dur_min}", "-f", "null", "-"],
+        capture_output=True, text=True)
+    inicios = [float(x) for x in re.findall(r"silence_start:\s*(-?[\d.]+)", r.stderr)]
+    finales = [float(x) for x in re.findall(r"silence_end:\s*(-?[\d.]+)", r.stderr)]
+    return list(zip(inicios, finales))
+
+
+def voz_sin_subtitulo(media, ass_words, holgura=0.15, umbral=0.35):
+    """Tramos con VOZ SONANDO y NINGÚN subtítulo en pantalla.
+
+    Es el agujero estructural de todo lo demás que mide este script: un
+    subtítulo que NO EXISTE no genera par de error, así que ninguna métrica de
+    DESFASE puede verlo, con ningún umbral. En la corrida del 11-ago eran 8,5 s
+    seguidos de narración con la pantalla en blanco y el gate lo dio por bueno.
+
+    Se ignora todo lo anterior al primer cue: durante la intro el narrador dice
+    la frase del título y los subtítulos están suprimidos A PROPÓSITO
+    (`skip_until`), así que contarlo sería un falso positivo garantizado.
+    """
+    if not ass_words:
+        return [], 0.0
+    dur = float(_ffprobe(media, "duration")[0])
+    inicio = min(s for _, s, _ in ass_words)      # fin de la intro
+
+    # Intervalos CON subtítulo, fundidos y dilatados: los huecos de milisegundos
+    # entre dos palabras seguidas son del formato, no pantallas en blanco.
+    cues = sorted((s, e) for _, s, e in ass_words)
+    cubierto = []
+    for s, e in cues:
+        s, e = s - holgura, e + holgura
+        if cubierto and s <= cubierto[-1][1]:
+            cubierto[-1][1] = max(cubierto[-1][1], e)
+        else:
+            cubierto.append([s, e])
+
+    # Voz = complemento del silencio
+    voz, prev = [], inicio
+    for s, e in _silencios(media):
+        if s > prev:
+            voz.append((prev, min(s, dur)))
+        prev = max(prev, e)
+    if prev < dur:
+        voz.append((prev, dur))
+
+    huecos = []
+    for vs, ve in voz:
+        vs = max(vs, inicio)
+        if ve <= vs:
+            continue
+        cursor = vs
+        for cs, ce in cubierto:
+            if ce <= cursor or cs >= ve:
+                continue
+            if cs > cursor:
+                huecos.append((cursor, min(cs, ve)))
+            cursor = max(cursor, ce)
+            if cursor >= ve:
+                break
+        if cursor < ve:
+            huecos.append((cursor, ve))
+
+    huecos = [(a, b) for a, b in huecos if b - a >= umbral]
+    return huecos, sum(b - a for a, b in huecos)
+
+
+def rachas_aplastadas(ass_words, dur_max=0.09, racha_min=4):
+    """Palabras seguidas en el SUELO de duración: subtítulo ilegible.
+
+    `_enforce_monotonic` resuelve un desorden del alineador empujando cada
+    palabra `paso_min = 0,05 s`. Eso no falla: produce 28 palabras en 1,40 s
+    (1200 wpm en pantalla), lo escribe en un WARNING que nadie lee y el vídeo
+    sale igual. Aquí se convierte en veredicto.
+    """
+    peor, racha, inicio, salida = 0, 0, None, []
+    for w, s, e in ass_words:
+        if e - s <= dur_max:
+            if racha == 0:
+                inicio = s
+            racha += 1
+        else:
+            if racha >= racha_min:
+                salida.append((inicio, racha))
+            peor, racha = max(peor, racha), 0
+    if racha >= racha_min:
+        salida.append((inicio, racha))
+    peor = max(peor, racha)
+    return peor, salida
+
+
+def cierre_narrativo(log_path, stem):
+    """¿Se pidió y se escribió el bloque de DESENLACE de esta historia?
+
+    No se puede detectar "final satisfactorio" leyendo el texto: es un juicio, y
+    §18 dice que un juicio que el modelo no puede dar se vuelve determinista o
+    hueco. Lo determinista es el hecho que falló [CIERRE-01]: el bucle salió sin
+    pedir nunca el bloque final y el vídeo se publicó a mitad de escena. Eso el
+    log SÍ lo dice, así que se comprueba ahí.
+    """
+    if not os.path.exists(log_path):
+        return None, "sin pipeline.log: no se puede comprobar el cierre"
+    texto = open(log_path, encoding="utf-8", errors="replace").read()
+    bloques = texto.split("=== Produciendo ")
+    tramo = next((b for b in reversed(bloques) if b.startswith(stem)), None)
+    if tramo is None:
+        return None, f"no hay tramo de {stem} en el log"
+    tramo = tramo.split("=== Completado")[0]
+    if "pidiendo final" in tramo or "Cierre anadido" in tramo:
+        return True, "el bloque de desenlace se pidio y se escribio"
+    return False, ("la historia se cerro SIN bloque de desenlace: el bucle salio "
+                   "por el 85% del objetivo (clase [CIERRE-01])")
 
 
 def ngramas_repetidos(texto, n=12):
@@ -106,6 +232,33 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
     pausas = pausas_fuera_de_puntuacion(ass)
     print(f"{OK if not pausas else AVISO} pausas fuera de puntuación: {len(pausas)}")
 
+    # --- COBERTURA: lo que ninguna métrica de desfase puede ver
+    huecos, total_hueco = voz_sin_subtitulo(video, ass_words)
+    est = OK if total_hueco < 1.0 else MAL
+    peor = max(huecos, key=lambda h: h[1] - h[0]) if huecos else None
+    detalle = (f"peor {peor[1]-peor[0]:.2f}s en t={peor[0]:.1f}s" if peor else "ninguno")
+    print(f"{est} voz SIN subtítulo: {total_hueco:.2f}s en {len(huecos)} tramo(s), {detalle}")
+    if est == MAL:
+        fallos.append(f"{total_hueco:.1f}s de voz sin subtítulo en pantalla ({detalle})")
+
+    # --- palabras aplastadas en el suelo de duración
+    peor_racha, rachas = rachas_aplastadas(ass_words)
+    est = OK if peor_racha < 4 else MAL
+    print(f"{est} palabras aplastadas: racha máxima {peor_racha} "
+          f"(<=0,09 s cada una){'; tramos: ' + ', '.join(f't={t:.1f}s x{n}' for t, n in rachas[:3]) if rachas else ''}")
+    if est == MAL:
+        fallos.append(f"racha de {peor_racha} palabras ilegibles (subtítulo en el suelo)")
+
+    # --- cierre narrativo [CIERRE-01]
+    cerrado, motivo = cierre_narrativo(os.path.join(os.path.dirname(ass) or ".", "..", "pipeline.log"),
+                                       os.path.basename(video)[: -len("_final.mp4")])
+    if cerrado is None:
+        print(f"{AVISO} cierre narrativo: {motivo}")
+    else:
+        print(f"{OK if cerrado else MAL} cierre narrativo: {motivo}")
+        if not cerrado:
+            fallos.append("la historia se publicó SIN desenlace")
+
     # --- basura del modelo y párrafos repetidos, sobre el guion real
     if story and os.path.exists(story):
         texto = open(story, encoding="utf-8").read()
@@ -143,6 +296,18 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         print(f"{est} loudness: {i:.1f} LUFS{pico}. YouTube normaliza "
               f"a -14 y SOLO BAJA: por debajo suena más flojo que la competencia")
 
+    # --- el título contra el campo REAL de YouTube
+    titulo_f = video[: -len("_final.mp4")] + "_title.txt"
+    if os.path.exists(titulo_f):
+        t = open(titulo_f, encoding="utf-8").read().strip()
+        est = OK if len(t) <= 100 else MAL
+        print(f"{est} título: {len(t)} caracteres, {len(t.split())} palabras "
+              f"(YouTube corta en 100)")
+        if est == MAL:
+            print(f"       se publicaría: {t[:97]}...")
+            fallos.append(f"título de {len(t)} caracteres: YouTube corta en 100 y "
+                          f"se pierde el gancho")
+
     ass_txt = open(ass, encoding="utf-8").read()
     geo = "1920" in ass_txt.split("PlayResY")[0] and "pos(960,540)" in ass_txt
     print(f"{OK if geo else MAL} geometría: PlayRes 1920x1080 + pos(960,540)")
@@ -174,6 +339,53 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
         print(f"{est} aperturas: {distintas} palabras iniciales distintas, "
               f"racha máxima {maxracha} títulos seguidos con la misma")
 
+    # --- arranque MUTILADO: el short narra un trozo roto de su propio título
+    # `_ensure_title_at_start` recorta el solape por PREFIJO palabra a palabra.
+    # Si el modelo parafraseó ("Mi padrino DE BAUTISMO vendió..."), el match
+    # rompe en la 2.ª palabra y la cola del título se queda pegada detrás: se
+    # oye en el segundo 1, que en vertical es el producto entero. Medido: 7 de
+    # 48 shorts del corpus, 2 de los 14 de la última corrida.
+    mutilados, medidos = [], 0
+    for f in titulos_f:
+        stem = os.path.basename(f)[: -len("_title.txt")]
+        srt = os.path.join(temp_dir, f"{stem}_subs.srt")
+        ass = os.path.join(temp_dir, f"{stem}_subs.ass")
+        titulo = [_norm_pal(w) for w in open(f, encoding="utf-8").read().split()]
+        if len(titulo) < 5:
+            continue
+        # El .srt trae la narración ENTERA; el .ass de un short arranca DESPUÉS
+        # del título (`skip_until`), así que en él la cola mutilada está en la
+        # posición 0. Medirlo sobre el .ass sin tener esto en cuenta da 0
+        # detecciones sobre un corpus donde el defecto sí existe.
+        if os.path.exists(srt):
+            narrado = [_norm_pal(w) for w in re.sub(r"\d+\n[\d:,]+ --> [\d:,]+", " ",
+                                                    open(srt, encoding="utf-8-sig").read()).split()]
+            despues = narrado[len(titulo):len(titulo) + 40]
+        elif os.path.exists(ass):
+            despues = [_norm_pal(w) for w, _, _ in lee_ass(ass)][:40]
+        else:
+            continue
+        medidos += 1
+        if len(despues) < 6:
+            continue
+        # 4-gramas de la COLA del título que reaparecen justo después de él
+        cola = {" ".join(titulo[i:i + 4]) for i in range(max(0, len(titulo) - 8), len(titulo) - 3)}
+        eco = [g for g in (" ".join(despues[i:i + 4]) for i in range(max(0, len(despues) - 3)))
+               if g in cola]
+        if eco:
+            mutilados.append((stem, eco[0]))
+    if medidos:
+        print(f"{OK} arranque medido sobre {medidos}/{len(titulos_f)} shorts")
+    if titulos_f:
+        est = OK if not mutilados else MAL
+        print(f"{est} arranque de shorts: {len(mutilados)} narran un trozo repetido "
+              f"de su propio título")
+        for stem, g in mutilados[:3]:
+            print(f"       {stem}: ...{g}...")
+        if mutilados:
+            fallos.append(f"{len(mutilados)} shorts empiezan repitiendo un fragmento "
+                          f"de su título")
+
     # sincronismo de una muestra de shorts (el gemelo que nadie mira)
     for mp4 in mp4s[:n_medir]:
         stem = os.path.splitext(os.path.basename(mp4))[0]
@@ -196,6 +408,14 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
         print(f"{est} {stem}: medio {med:.3f}s{detalle}")
         if est == MAL:
             fallos.append(f"{stem} desincronizado")
+
+        # el mismo agujero de cobertura, en el gemelo: 3 de los 20 shorts del
+        # 11-ago tenían voz sonando con la pantalla sin subtítulo
+        huecos, total = voz_sin_subtitulo(mp4, aw)
+        est = OK if total < 0.5 else MAL
+        print(f"{est} {stem}: voz SIN subtítulo {total:.2f}s en {len(huecos)} tramo(s)")
+        if est == MAL:
+            fallos.append(f"{stem}: {total:.1f}s de voz sin subtítulo")
     return fallos
 
 
