@@ -37,6 +37,12 @@ QUOTA_COST = {
     "channels": 1,
     "playlistItems": 1,
     "videos": 1,
+    # Subir un vídeo cuesta 1.600 de las 10.000 unidades diarias, y salen del
+    # MISMO cupo que el análisis de competencia: 6 subidas al día agotan la
+    # cuota entera. Vive en esta tabla, y no en el uploader, para que haya un
+    # único contador — dos contadores distintos harían que el corte preventivo
+    # de `QuotaMeter` dejara de proteger.
+    "videosInsert": 1600,
 }
 
 # Marcadores de idioma. La API no rellena defaultAudioLanguage de forma fiable,

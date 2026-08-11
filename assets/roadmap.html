@@ -1,0 +1,116 @@
+<!doctype html><html><head><meta charset='utf-8'><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:#0a0a0f;font-family:'Inter','Segoe UI',system-ui,sans-serif;
+overflow:hidden;display:flex;align-items:center;justify-content:center}
+svg{width:100%;height:100%;display:block}
+.flow{stroke-dasharray:5 9;animation:m 1s linear infinite}
+.flowd{stroke-dasharray:2 7;animation:m 1.3s linear infinite}
+@keyframes m{to{stroke-dashoffset:-14}}
+.pulse{animation:p 2.6s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:.5}50%{opacity:1}}
+.glow{filter:drop-shadow(0 0 5px currentColor)}
+.t{font-size:13.5px;font-weight:700;fill:#f0f0f5}
+.s{font-size:9.5px;fill:#9aa0b4}
+.hub{font-size:14px;font-weight:800;fill:#fff}
+.hubs{font-size:10px;fill:#ffd9b3}
+.stp{font-size:9px;fill:#dfe3ee}
+.el{font-size:9.5px;font-weight:600}
+.leg{font-size:11px;fill:#9aa0b4}
+</style></head><body>
+<svg viewBox="0 0 1080 470" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6"
+orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c8c8d4"/></marker></defs>
+
+<!-- ===== FLUJO PRINCIPAL (izq -> der) ===== -->
+
+<!-- ENTRADA -> OPERAR (verde) -->
+<path d="M195,192 L228,192" fill="none" stroke="#2ec27e" stroke-width="2.2" opacity="0.75" class="flow" marker-end="url(#a)"/>
+<circle r="3.4" fill="#2ec27e" class="glow" color="#2ec27e"><animateMotion dur="2.2s" begin="0s" repeatCount="indefinite" path="M195,192 L228,192"/></circle>
+
+<!-- OPERAR -> PIPELINE (azul, Play) -->
+<path d="M397,192 L436,192" fill="none" stroke="#5b9dff" stroke-width="2.2" opacity="0.75" class="flow" marker-end="url(#a)"/>
+<circle r="3.6" fill="#5b9dff" class="glow" color="#5b9dff"><animateMotion dur="2.0s" begin="0s" repeatCount="indefinite" path="M397,192 L436,192"/></circle>
+<text x="416" y="180" text-anchor="middle" class="el" fill="#5b9dff">▶ Play</text>
+
+<!-- PIPELINE -> RESULTADOS (verde, entrega) -->
+<path d="M650,192 L688,192" fill="none" stroke="#2ec27e" stroke-width="2.2" opacity="0.75" class="flow" marker-end="url(#a)"/>
+<circle r="3.6" fill="#2ec27e" class="glow" color="#2ec27e"><animateMotion dur="2.2s" begin="0s" repeatCount="indefinite" path="M650,192 L688,192"/></circle>
+<text x="669" y="180" text-anchor="middle" class="el" fill="#2ec27e">entrega</text>
+
+<!-- RESULTADOS -> YOUTUBE (teal, subes) -->
+<path d="M855,192 L893,192" fill="none" stroke="#4ec9b0" stroke-width="2.2" opacity="0.75" class="flow" marker-end="url(#a)"/>
+<circle r="3.4" fill="#4ec9b0" class="glow" color="#4ec9b0"><animateMotion dur="2.2s" begin="0s" repeatCount="indefinite" path="M855,192 L893,192"/></circle>
+<text x="874" y="180" text-anchor="middle" class="el" fill="#4ec9b0">subes</text>
+
+<!-- ===== RAMALES ===== -->
+
+<!-- PIPELINE -> PROGRESO (abajo, ambar, en vivo) -->
+<path d="M545,256 L545,298" fill="none" stroke="#f5a623" stroke-width="2.2" opacity="0.75" class="flow" marker-end="url(#a)"/>
+<circle r="3.4" fill="#f5a623" class="glow" color="#f5a623"><animateMotion dur="2.0s" begin="0s" repeatCount="indefinite" path="M545,256 L545,298"/></circle>
+<text x="558" y="282" class="el" fill="#f5a623">en vivo</text>
+
+<!-- ESTADO -> OPERAR (arriba, gris, revisas antes) -->
+<path d="M314,106 L314,148" fill="none" stroke="#9aa0b4" stroke-width="1.8" opacity="0.6" class="flowd" marker-end="url(#a)"/>
+<circle r="2.8" fill="#9aa0b4" class="glow" color="#9aa0b4"><animateMotion dur="2.6s" begin="0s" repeatCount="indefinite" path="M314,106 L314,148"/></circle>
+<text x="326" y="132" class="el" fill="#9aa0b4">revisas antes</text>
+
+<!-- CONFIG -> PIPELINE (arriba, morado, afina) -->
+<path d="M545,92 L545,128" fill="none" stroke="#c08bdb" stroke-width="1.8" opacity="0.65" class="flowd" marker-end="url(#a)"/>
+<circle r="2.8" fill="#c08bdb" class="glow" color="#c08bdb"><animateMotion dur="2.6s" begin="0s" repeatCount="indefinite" path="M545,92 L545,128"/></circle>
+<text x="558" y="114" class="el" fill="#c08bdb">afina</text>
+
+<!-- ===== NODOS ===== -->
+
+<!-- ENTRADA -->
+<rect x="30" y="150" width="165" height="84" rx="12" fill="rgba(255,255,255,0.03)" stroke="#6b7280" stroke-width="1.8"/>
+<text x="112" y="184" text-anchor="middle" class="t">🎮 ENTRADA</text>
+<text x="112" y="202" text-anchor="middle" class="s">gameplay bruto</text>
+<text x="112" y="217" text-anchor="middle" class="s">(carpeta input/)</text>
+
+<!-- OPERAR -->
+<rect x="232" y="150" width="165" height="84" rx="12" fill="rgba(255,255,255,0.03)" stroke="#5b9dff" stroke-width="1.8"/>
+<text x="314" y="187" text-anchor="middle" class="t">🎬 OPERAR</text>
+<text x="314" y="206" text-anchor="middle" class="s">eliges archivo + Play</text>
+
+<!-- PIPELINE (hub) -->
+<rect x="440" y="130" width="210" height="124" rx="16" fill="rgba(255,138,61,0.08)" stroke="#ff8a3d" stroke-width="2" class="pulse glow" color="#ff8a3d"/>
+<text x="545" y="158" text-anchor="middle" class="hub">⚙️ EL PIPELINE</text>
+<text x="545" y="177" text-anchor="middle" class="hubs">trabaja solo (main.py):</text>
+<text x="545" y="201" text-anchor="middle" class="stp">limpia → escribe historia → voz</text>
+<text x="545" y="220" text-anchor="middle" class="stp">→ subtítulos → video → shorts</text>
+
+<!-- RESULTADOS -->
+<rect x="690" y="150" width="165" height="84" rx="12" fill="rgba(255,255,255,0.03)" stroke="#2ec27e" stroke-width="1.8"/>
+<text x="772" y="184" text-anchor="middle" class="t">🖼️ RESULTADOS</text>
+<text x="772" y="202" text-anchor="middle" class="s">recoges lo</text>
+<text x="772" y="217" text-anchor="middle" class="s">terminado</text>
+
+<!-- YOUTUBE -->
+<rect x="895" y="150" width="160" height="84" rx="12" fill="rgba(255,255,255,0.03)" stroke="#ff5c5c" stroke-width="1.8"/>
+<text x="975" y="187" text-anchor="middle" class="t">▶️ YOUTUBE</text>
+<text x="975" y="206" text-anchor="middle" class="s">lo subes y listo</text>
+
+<!-- ESTADO (apoyo, arriba) -->
+<rect x="232" y="28" width="165" height="76" rx="12" fill="rgba(255,255,255,0.03)" stroke="#4ec9b0" stroke-width="1.6"/>
+<text x="314" y="60" text-anchor="middle" class="t">📊 ESTADO</text>
+<text x="314" y="78" text-anchor="middle" class="s">¿hay material? ¿listo?</text>
+
+<!-- CONFIG (apoyo, arriba) -->
+<rect x="440" y="14" width="210" height="76" rx="12" fill="rgba(255,255,255,0.03)" stroke="#c08bdb" stroke-width="1.6"/>
+<text x="545" y="46" text-anchor="middle" class="t">⚙️ CONFIG</text>
+<text x="545" y="64" text-anchor="middle" class="s">voces · estilo · calidad</text>
+
+<!-- PROGRESO (apoyo, abajo) -->
+<rect x="440" y="300" width="210" height="82" rx="12" fill="rgba(255,255,255,0.03)" stroke="#f5a623" stroke-width="1.6"/>
+<text x="545" y="334" text-anchor="middle" class="t">📡 PROGRESO</text>
+<text x="545" y="353" text-anchor="middle" class="s">lo ves avanzar</text>
+<text x="545" y="368" text-anchor="middle" class="s">en tiempo real</text>
+
+<!-- ===== LEYENDA ===== -->
+<g transform="translate(40,410)">
+<circle cx="4" cy="0" r="5" fill="#2ec27e"/><text x="16" y="4" class="leg">el pipeline trabaja solo (automático)</text>
+<circle cx="4" cy="22" r="5" fill="#5b9dff"/><text x="16" y="26" class="leg">tú lanzas la corrida (Operar)</text>
+<circle cx="4" cy="44" r="5" fill="#9aa0b4"/><text x="16" y="48" class="leg">Estado revisas · Config afinas · Progreso observas</text>
+</g>
+</svg></body></html>
