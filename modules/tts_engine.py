@@ -549,7 +549,24 @@ def _validate_and_fix_alignment(words, sentences):
         fin = min(len(residuos), pos + ANCLA_VECINDARIO + 1)
         mediana = _mediana(residuos[ini:fin])
         offset_ventana = v["residuo"]
-        ancla_corrupta = abs(v["residuo"] - mediana) > ANCLA_TOL
+
+        # Un residuo grande tiene DOS causas opuestas y hay que distinguirlas o
+        # se rompe justo lo que se quería arreglar (medido el 11-ago-2026 en 3
+        # de 16 shorts de producción, con tramos enteros a 2 s de la voz):
+        #   (a) ANCLA CORRUPTA -> outlier AISLADO: los vecinos concuerdan con la
+        #       mediana. La ventana está mal y el vecindario es de fiar.
+        #   (b) DERIVA DE WHISPER -> residuos que crecen en ventanas SEGUIDAS
+        #       (-3,47 s y luego -5,39 s). Ahí el ancla de edge-tts es la CURA:
+        #       verificado con `silencedetect` sobre el audio, que no depende de
+        #       Whisper — los silencios reales acaban en 39,596 s y 45,918 s,
+        #       justo donde edge-tts dice que arrancan esas frases (39,41/45,75),
+        #       mientras Whisper las colocaba en 42,88 y 51,14.
+        # Solo (a) se corrige; en (b) se respeta el ancla.
+        def _concuerda(j):
+            return j < 0 or j >= len(residuos) or abs(residuos[j] - mediana) <= ANCLA_TOL
+
+        aislada = _concuerda(pos - 1) and _concuerda(pos + 1)
+        ancla_corrupta = abs(v["residuo"] - mediana) > ANCLA_TOL and aislada
         if ancla_corrupta:
             offset_ventana = mediana
             corregidas += 1

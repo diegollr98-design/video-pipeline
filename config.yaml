@@ -47,6 +47,8 @@ video:
   audio_codec: "aac"
   audio_bitrate: "192k"
   preset: "p2"                   # nvenc: p1(fastest)-p7(best) — p2 = rapido, YouTube recomprime igual
+  max_bitrate: "8M"              # techo: sin el, 720p60 salia a 14 Mbps = 3,6 GB/video (YouTube recomienda 7,5)
+  bufsize: "16M"
   loop_gameplay: true
 
 story:

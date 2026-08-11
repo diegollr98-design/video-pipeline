@@ -287,7 +287,11 @@ def _compose_short(gameplay_path, audio_path, ass_path, output_path,
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "1:a",
+        # Techo de bitrate: medido, un short de 39 s salía a 23,6 Mbps y pesaba
+        # 110 MB. Son 5,5 GB por tanda de 50 con el disco al 99%, y el doble de
+        # lo que YouTube recomienda para 1080p60 vertical. Ver video_composer.
         "-c:v", "h264_nvenc", "-cq", "23", "-preset", "p4",
+        "-maxrate", "12M", "-bufsize", "24M",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest",
         "-y", output_path,

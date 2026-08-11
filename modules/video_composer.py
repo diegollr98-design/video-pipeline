@@ -140,6 +140,16 @@ def compose(video_path, audio_path, ass_path, output_path, config,
     else:
         quality_args = ["-crf", str(vid_cfg["crf"]), "-preset", vid_cfg["preset"]]
 
+    # Techo de bitrate. Medido en la producción del 11-ago-2026: el vídeo salía
+    # a 14,0 Mbps en 1280x720@60, casi el DOBLE de los 7,5 Mbps que recomienda
+    # YouTube para 720p60 — y YouTube recomprime igual, así que esos bits solo
+    # sirven para llenar el disco: 3,6 GB por vídeo con el disco al 99%. El
+    # límite es el disco, no la calidad percibida (misma razón por la que aquí
+    # se usa el preset p2 y no p4).
+    maxrate = vid_cfg.get("max_bitrate", "8M")
+    if maxrate:
+        quality_args += ["-maxrate", maxrate, "-bufsize", vid_cfg.get("bufsize", "16M")]
+
     cmd = [
         ffmpeg,
         *inputs,
