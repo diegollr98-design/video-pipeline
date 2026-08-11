@@ -1,3 +1,4 @@
+import difflib
 import json
 import logging
 import os
@@ -308,6 +309,41 @@ def _normalize_for_compare(text):
     return re.sub(r'[^a-záéíóúüñ\s]', '', text.lower()).strip()
 
 
+# Eco del título parafraseado [TITULO-01]. El match por PREFIJO de
+# `_ensure_title_at_start` rompe en la primera palabra distinta, así que una
+# paráfrasis del modelo ("Mi padrino DE BAUTISMO vendió…") deja pegada la cola
+# del título, que se NARRA y se SUBTITULA justo después de decir el título.
+_ECO_MAX_CHARS = 220      # hasta dónde se busca el final del fragmento inicial
+_ECO_UMBRAL = 0.60        # fracción de sus palabras que deben venir del título
+
+
+def _fin_de_frase(texto, limite=_ECO_MAX_CHARS):
+    """Posición tras el primer final de frase dentro de `limite` caracteres."""
+    for m in re.finditer(r"[.!?]+(?=\s|$)", texto[:limite]):
+        return m.end()
+    return 0
+
+
+def _es_eco_del_titulo(fragmento, titulo_palabras, umbral=_ECO_UMBRAL):
+    """¿El fragmento inicial es un trozo del título, aunque esté parafraseado?
+
+    Por solape de TOKENS, no por subcadena literal: la comprobación anterior
+    exigía que el fragmento fuese subcadena del resto del título, y una sola
+    letra la rompía — el caso real fue el título "…Vació Mi Carteras Fría…"
+    seguido de "cartera fría, y desapareció con mis bitcoins" (singular contra
+    plural), que se coló entero en el short.
+    """
+    frag = _normalize_for_compare(fragmento).split()
+    if not frag or not titulo_palabras:
+        return False
+    # Un fragmento mucho más largo que el título es historia, no eco.
+    if len(frag) > len(titulo_palabras) + 4:
+        return False
+    sm = difflib.SequenceMatcher(None, frag, titulo_palabras, autojunk=False)
+    comunes = sum(b.size for b in sm.get_matching_blocks())
+    return comunes / len(frag) >= umbral
+
+
 def _ensure_title_at_start(title, story):
     """Ensure the speech starts with the full title as its first sentence.
 
@@ -349,17 +385,18 @@ def _ensure_title_at_start(title, story):
     if overlap > 0:
         # Remove the overlapping partial title from the story start
         story = " ".join(story_words[overlap:])
-        # Also remove any leading partial sentence (until first period)
-        first_period = story.find('.')
-        if first_period != -1 and first_period < 100:
-            # Check if the text before the period is a fragment of the title
-            fragment_norm = _normalize_for_compare(story[:first_period])
-            title_remainder_norm = _normalize_for_compare(" ".join(title_clean.split()[overlap:]))
-            if fragment_norm and title_remainder_norm and fragment_norm not in title_remainder_norm:
-                pass  # Not a title fragment, keep it
-            else:
-                story = story[first_period + 1:].strip()
         logger.info(f"Eliminado solapamiento de {overlap} palabras del inicio")
+
+    # Segunda pasada: la COLA del título, parafraseada. El prefijo de arriba solo
+    # come mientras las palabras coincidan literalmente, así que "Mi padrino DE
+    # BAUTISMO vendió…" rompe en la 2.ª palabra y deja el resto pegado. Se oye en
+    # el segundo 1, que en un short vertical es el producto entero.
+    # Medido: 2 de los 14 shorts de la última corrida, 7 de los 48 del corpus.
+    corte = _fin_de_frase(story)
+    if corte and _es_eco_del_titulo(story[:corte], title_words):
+        eco = story[:corte].strip()
+        story = story[corte:].strip()
+        logger.info(f"Eliminado eco del titulo al inicio: {eco[:70]!r}")
 
     logger.info("Forzando titulo al inicio del speech")
     return title_sentence + " " + story.strip()
