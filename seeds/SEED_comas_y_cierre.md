@@ -67,11 +67,11 @@ contra el `mtime` del fichero). Es barato y aquí habría ahorrado dos falsos po
 |---|---|
 | `input/` | `2026-01-27 21-29-26.mp4`, 13,8 GB, 33,6 min. **Intacto** |
 | `temp/chunk_1786444528.mp4` | 3,7 GB, 2004,4 s, 1280x720@60. **Conservado**: relanzar NO exige re-ingerir (ahorra ~23 min) |
-| `temp/video_001_audio.mp3` | ⚠️ 9,5 MB. **Único espécimen grabado de una narración a 0,2 comas/100** — justo lo que hay que arreglar. NO está en `data/evidence/` y **la próxima corrida lo sobrescribe**. El audio del 10-ago ya se perdió así. **Cópialo a `data/evidence/audio_11ago.mp3` ANTES de nada** |
+| `temp/video_001_audio.mp3` | ✅ **YA PRESERVADO** en `data/evidence/audio_11ago.mp3` (11-ago). Único espécimen grabado de una narración a 0,2 comas/100. También se preservaron los 50 `.srt` de shorts en `data/evidence/srt_11ago/`, que son el corpus que demuestra [TITULO-01] |
 | `output/video_001_final.mp4` | 1582,0 s, 1280x720, 7,87 Mbps. **No publicable** (BLOQUES 1, 2). El 720p **no es defecto**: es la resolución del `input/` |
-| `shorts_tiktok/` | 14 shorts (la corrida murió en el 15 de 50). Bitrate 11,0-11,7 Mbps = **en su techo y correcto** (ver §CORRECCIONES) |
+| `shorts_tiktok/` | **VACIADO el 11-ago** con el OK de Diego (eran 14 shorts de la corrida abortada). Su bitrate estaba **en su techo y correcto** (ver §CORRECCIONES) |
 | `data/evidence/` | Alineación cruda, `SentenceBoundary`, transcripción independiente de las dos producciones, guiones, `.ass`, 50 títulos de shorts. **Intocable** |
-| Disco | **22 GB libres, 96% usado.** ⚠️ El pico real de una corrida es **~12 GB**, no 4-5: `take_chunk` **copia** el chunk a `temp/` antes de borrar el del pool (+7,4 GB transitorios) |
+| Disco | **27 GB libres** tras la limpieza del 11-ago (llegó a 7,5 GB y no cabía la corrida larga). ⚠️ El pico real de una corrida sigue siendo **~12 GB**, no 4-5: `take_chunk` **copia** el chunk a `temp/` antes de borrar el del pool (+7,4 GB transitorios) |
 | Cuota OpenRouter | Verifícala con `GET /api/v1/credits`, **nunca** con `/api/v1/key`. Una corrida completa son ~55-61 peticiones, de las cuales **~50 son los shorts** |
 | Cuota YouTube | 10.000/día, compartidas entre competencia y subida (`videos.insert` = 1600) |
 | git | 7 commits nuevos, ninguno pusheado. `assets/.tint_index` y `docs/video_guion.md` modificados de antes, no son de este trabajo |
