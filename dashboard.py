@@ -951,6 +951,16 @@ with tab_subir:
                     f"Subido el {_m.get('fecha')} como **{_m.get('privacidad')}** — "
                     f"{_m.get('url')}"
                 )
+                _thumb_estado = _m.get("thumbnail")
+                if _thumb_estado == "ok":
+                    st.caption("Miniatura propia subida correctamente.")
+                elif _thumb_estado == "sin miniatura":
+                    st.caption(
+                        "Sin miniatura propia (no existía el `.jpg`): YouTube "
+                        "eligió un fotograma al azar como portada."
+                    )
+                elif _thumb_estado:
+                    st.warning(f"La miniatura NO se subió: {_thumb_estado}")
                 st.caption(
                     "Sigue estando en privado: hazlo público tú desde YouTube Studio."
                 )
@@ -1011,6 +1021,16 @@ with tab_subir:
                     with st.spinner("Subiendo a YouTube (puede tardar varios minutos)"):
                         _marca = _yt.subir_video(_item["video"], config, progreso=_prog)
                     st.success(f"Subido: {_marca['url']} (privado)")
+                    _thumb_estado = _marca.get("thumbnail")
+                    if _thumb_estado == "ok":
+                        st.success("Miniatura propia subida correctamente.")
+                    elif _thumb_estado == "sin miniatura":
+                        st.warning(
+                            "Sin miniatura propia (no existía el `.jpg`): "
+                            "YouTube eligió un fotograma al azar como portada."
+                        )
+                    elif _thumb_estado:
+                        st.warning(f"La miniatura NO se subió: {_thumb_estado}")
                     st.rerun()
                 except _QuotaExhausted as e:
                     st.error(f"Cuota agotada: {e}")

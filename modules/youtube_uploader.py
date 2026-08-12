@@ -31,9 +31,12 @@ logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
+THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 CHUNK = 8 * 1024 * 1024  # 8 MB por trozo; un video de 30 min son ~3,4 GB
+THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024  # límite DURO de YouTube (dato externo: verificar si cambia)
 
 CATEGORIA_ENTRETENIMIENTO = "24"
+
 
 
 class FaltaCredencial(Exception):
@@ -300,6 +303,103 @@ def _cobra_cuota(config):
     return meter.spent, limite
 
 
+def thumbnail_path_for(video_path):
+    """Ruta de la miniatura que genera `thumbnail_generator.py` para este vídeo.
+
+    Mismo patrón que usa `pendientes()` más abajo — un solo sitio decide el
+    nombre del fichero, para que ambos no se desincronicen.
+    """
+    stem = os.path.basename(video_path)[: -len("_final.mp4")]
+    return os.path.join(os.path.dirname(video_path), f"{stem}_thumbnail.jpg")
+
+
+def _cobra_cuota_miniatura(config):
+    state = load_state(config)
+    limite = ((config.get("competition") or {}).get("quota") or {}).get(
+        "daily_limit", 10000)
+    meter = QuotaMeter(state, limite)
+    meter.charge("thumbnailsSet")      # lanza QuotaExhausted si no cabe
+    save_state(state, config)
+    return meter.spent, limite
+
+
+def subir_miniatura(video_id, thumbnail_path, config, creds=None):
+    """Sube la miniatura de un vídeo YA subido a YouTube.
+
+    Regla dura de este cambio: el vídeo de 1,5+ GB ya está arriba y una
+    subida de 3 GB no se repite por culpa de un JPEG. Por eso esta función
+    NUNCA lanza — devuelve un string de estado ("ok" / "sin miniatura" /
+    "fallo: <motivo>") para que el caller lo escriba en la marca. Marcar,
+    no matar (§13 de `decision-making.md`: nada de fallback silencioso —
+    aquí el "log ruidoso + propagar" se cumple devolviendo el motivo, no
+    tragándoselo).
+    """
+    if not thumbnail_path or not os.path.exists(thumbnail_path):
+        logger.warning(
+            f"Sin miniatura que subir para el vídeo {video_id}: "
+            f"no existe {thumbnail_path}")
+        return "sin miniatura"
+
+    try:
+        tam = os.path.getsize(thumbnail_path)
+    except OSError as e:
+        logger.error(f"No se pudo leer el tamaño de {thumbnail_path}: {e}")
+        return f"fallo: no se pudo leer el fichero ({type(e).__name__}: {e})"
+
+    if tam > THUMBNAIL_MAX_BYTES:
+        motivo = (f"miniatura de {tam / 1024 / 1024:.2f} MB supera el límite "
+                   f"de YouTube de 2 MB ({thumbnail_path})")
+        logger.error(motivo)
+        return f"fallo: {motivo}"
+
+    try:
+        if creds is None:
+            creds = _credenciales(config)
+    except FaltaCredencial as e:
+        logger.error(
+            f"Sin credenciales para subir la miniatura del vídeo {video_id}: {e}")
+        return f"fallo: sin credenciales ({e})"
+
+    try:
+        with open(thumbnail_path, "rb") as f:
+            datos = f.read()
+    except OSError as e:
+        logger.error(f"No se pudo leer {thumbnail_path}: {e}")
+        return f"fallo: no se pudo leer el fichero ({type(e).__name__}: {e})"
+
+    try:
+        gastado, limite = _cobra_cuota_miniatura(config)
+    except QuotaExhausted as e:
+        logger.error(f"Sin cuota de YouTube para la miniatura de {video_id}: {e}")
+        return f"fallo: {e}"
+
+    try:
+        r = requests.post(
+            THUMBNAIL_URL,
+            params={"videoId": video_id, "uploadType": "media"},
+            headers={
+                "Authorization": f"Bearer {creds.token}",
+                "Content-Type": "image/jpeg",
+                "Content-Length": str(len(datos)),
+            },
+            data=datos,
+            timeout=60,
+        )
+    except requests.RequestException as e:
+        logger.error(f"Fallo de red subiendo la miniatura de {video_id}: {e}")
+        return f"fallo: red ({type(e).__name__}: {e})"
+
+    if r.status_code not in (200, 201):
+        motivo = f"YouTube rechazó la miniatura ({r.status_code}): {r.text[-500:]}"
+        logger.error(motivo)
+        return f"fallo: {motivo}"
+
+    logger.info(
+        f"Miniatura subida para el vídeo {video_id}; cuota YouTube "
+        f"{gastado}/{limite} unidades hoy")
+    return "ok"
+
+
 # ---------------------------------------------------------------- subida
 def _descripcion_por_defecto(titulo, config):
     plantilla = config.get("youtube", {}).get("description_template")
@@ -410,15 +510,30 @@ def subir_video(video_path, config, titulo=None, descripcion=None, tags=None,
             resp = _sube_trozo(sesion, destino, trozo, subidos, fin, total)
             if resp.status_code in (200, 201):
                 datos = resp.json()
+                video_id = datos.get("id")
+
+                # El vídeo YA está arriba. Si esto falla, NO se propaga: se
+                # marca en la propia marca de subida y se sigue (§13 — marcar,
+                # no matar, una subida de 3 GB no se repite por un JPEG).
+                thumb_path = thumbnail_path_for(video_path)
+                estado_thumb = subir_miniatura(video_id, thumb_path, config, creds=creds)
+                if estado_thumb == "ok":
+                    logger.info(f"Miniatura OK para {video_id}")
+                elif estado_thumb == "sin miniatura":
+                    logger.warning(f"Vídeo {video_id} subido sin miniatura propia (usará la de YouTube)")
+                else:
+                    logger.error(f"Miniatura de {video_id} NO subida: {estado_thumb}")
+
                 marca = {
-                    "video_id": datos.get("id"),
-                    "url": f"https://youtu.be/{datos.get('id')}",
+                    "video_id": video_id,
+                    "url": f"https://youtu.be/{video_id}",
                     "titulo": titulo,
                     "titulo_completo": titulo_completo,
                     "privacidad": privacidad,
                     "fecha": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "bytes": total,
                     "cuota_youtube_gastada_hoy": gastado,
+                    "thumbnail": estado_thumb,
                 }
                 with open(marca_path(video_path), "w", encoding="utf-8") as m:
                     json.dump(marca, m, ensure_ascii=False, indent=2)

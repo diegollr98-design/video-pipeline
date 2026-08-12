@@ -762,6 +762,36 @@ _YT_TITULO_MAX_CHARS = 100
 _YT_TITULO_MIN_PALABRAS = 6
 _YT_TITULO_MAX_PALABRAS = 16
 
+# Guardia contra el título TELEGRÁFICO [TITULOYT-02]. Medido n=2 contra la API
+# real: para caber en 100 caracteres el modelo a veces comprime a lo bruto,
+# comiéndose preposiciones y artículos ("Mi Hermano Me Obligó Firmar Renuncia
+# Herencia Grabé Coacción Juez Anuló Todo" — falta "a" en "obligó A firmar",
+# falta "la" en "LA renuncia", falta "a la" en "renuncia A LA herencia"). Por
+# §17 ("una garantía prometida en prosa no está garantizada hasta que un `if`
+# la fuerza"), pedirlo en el prompt no basta: se mide la proporción de
+# palabras funcionales (reutilizando `_ES_FUNCIONALES`, el mismo set que ya usa
+# `_validar_titulo_youtube` para el chequeo de idioma) y se rechaza por debajo
+# del umbral.
+#
+# CALIBRACIÓN (no inventada — medida sobre los títulos largos reales en disco,
+# que son español natural bien escrito y son la población de control: el
+# umbral NO puede rechazar a ninguno de ellos):
+#   n=51 títulos largos reales (output/*_title.txt + los 50 de
+#   data/evidence/shorts_titulos/*_title.txt, 12-29 palabras cada uno)
+#   ratio de palabras funcionales: min=0.308  mean=0.433  median=0.438  max=0.579
+#
+#   Ejemplo BUENO del propio encargo (15 palabras): ratio 0.467 (7/15) — cae
+#   dentro del rango de la población real.
+#   Ejemplo MALO telegráfico  (12 palabras): ratio 0.167 (2/12) — muy por
+#   debajo del mínimo de la población real (0.308).
+#
+# Hay separación clara con margen en ambos lados: 0.308 (mínimo real) vs 0.167
+# (telegráfico), hueco de 0.141. El umbral se pone en el punto medio de ese
+# hueco (0.2375), redondeado a 0.24, dejando margen a los dos lados:
+#   0.24 está 0.068 por debajo del mínimo real (ningún título real cerca del
+#   límite) y 0.073 por encima del telegráfico medido.
+_YT_TITULO_MIN_RATIO_FUNCIONALES = 0.24
+
 
 def _cortar_por_palabra(texto, max_chars=_YT_TITULO_MAX_CHARS):
     """Recorta `texto` a `max_chars` sin partir ninguna palabra a la mitad.
@@ -820,6 +850,17 @@ def _validar_titulo_youtube(titulo):
     if aciertos < 2 and not re.search(r"[áéíóúñü]", bajo):
         return False, "el título no parece español"
 
+    # Guardia contra el estilo telegráfico (comerse preposiciones/artículos
+    # para caber en 100 caracteres). Ver calibración junto a la constante.
+    if tokens:
+        ratio_funcionales = aciertos / len(tokens)
+        if ratio_funcionales < _YT_TITULO_MIN_RATIO_FUNCIONALES:
+            return False, (
+                f"título telegráfico: {aciertos}/{len(tokens)} palabras funcionales "
+                f"({ratio_funcionales:.0%}, mínimo {_YT_TITULO_MIN_RATIO_FUNCIONALES:.0%}) "
+                f"— se come preposiciones/artículos para caber en el límite"
+            )
+
     return True, ""
 
 
@@ -837,6 +878,27 @@ def _ultima_linea_util(raw):
     if not lineas:
         return ""
     linea = lineas[-1]
+
+    # El modelo ENTRECOMILLA su respuesta y la etiqueta por delante. Medido
+    # contra la API real: devolvió `Another option: "Mi Vecino Falsificó Mi
+    # Firma Para Vender Mi Parcela Y El Registro Lo Detectó`, y eso se habría
+    # publicado tal cual en el campo de título de YouTube. El guardia de
+    # palabras funcionales NO lo caza (0,44: el grueso de la frase sí es
+    # español), así que hay que quitar la etiqueta aquí.
+    # Se prefiere el tramo ENTRECOMILLADO más largo, que es donde el modelo pone
+    # la respuesta; perseguir prefijos concretos ("another option", "otra
+    # opción"…) sería un juego del topo sin fin.
+    # Solo si lo entrecomillado es la MAYOR PARTE de la línea. Sin ese corte se
+    # destroza un título legítimo que lleve una cita dentro: `Mi Jefe Dijo "No
+    # Vales Nada" Y Luego Me Suplicó Que Volviera` quedaba en `No Vales Nada`.
+    # La respuesta etiquetada del modelo ocupa el 81% de su línea; una cita
+    # dentro de un título, el 22%.
+    comillas = re.findall(r'["“«]([^"”»]{10,})["”»]?', linea)
+    if comillas:
+        mejor = max(comillas, key=len).strip()
+        if len(mejor) >= 0.60 * len(linea):
+            linea = mejor
+
     # Prefijos con los que a veces etiqueta su propia respuesta.
     for pref in ("título:", "titulo:", "title:", "respuesta:", "final:", "-", "*", "#"):
         if linea.lower().startswith(pref):
@@ -874,10 +936,16 @@ Título largo original:
 Reglas del título corto (todas obligatorias):
 - Entre 10 y 14 palabras.
 - Máximo 100 caracteres en total, contando espacios.
-- En español de España.
+- En español de España, GRAMATICAL Y NATURAL: con TODAS sus preposiciones ("a", "de", "en", "con"...) y artículos ("el", "la", "los", "las"...). PROHIBIDO el estilo telegrama/titular de periódico comprimido, donde se eliminan preposiciones y artículos para que quepan más sustantivos. Es preferible un título MÁS CORTO pero bien escrito que uno más largo y atropellado.
 - Conserva el GANCHO de la historia (lo más impactante, aunque en el título largo esté al final), no solo el arranque.
 - Mismo estilo Title Case que el original (Mayúscula Inicial En Cada Palabra).
-- Responde ÚNICAMENTE con el título. Sin comillas, sin explicaciones, sin prefijos como "Título:"."""
+- Responde ÚNICAMENTE con el título. Sin comillas, sin explicaciones, sin prefijos como "Título:".
+
+Ejemplo BUENO (español natural, con sus preposiciones y artículos):
+"Compré Casa, Mi Madre Me Echó Y Exige Que Pague La Boda De Mi Hermana"
+
+Ejemplo MALO — NUNCA hagas esto (telegráfico: falta "a" en "obligó A firmar", falta "la" en "LA renuncia", falta "a la" en "renuncia A LA herencia"):
+"Mi Hermano Me Obligó Firmar Renuncia Herencia Grabé Coacción Juez Anuló Todo\""""
 
     intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
     motivo = "sin intentos"
@@ -886,9 +954,11 @@ Reglas del título corto (todas obligatorias):
         mensaje = prompt
         if intento:
             mensaje = (
-                "TU RESPUESTA ANTERIOR NO SIRVIÓ. Responde ÚNICAMENTE con el título "
-                "corto en español, de 10 a 14 palabras, sin superar 100 caracteres en "
-                "total, sin comillas, sin explicaciones ni razonamiento previo.\n\n"
+                f"TU RESPUESTA ANTERIOR NO SIRVIÓ ({motivo}). Responde ÚNICAMENTE con el "
+                "título corto en español NATURAL Y GRAMATICAL —con TODAS sus "
+                "preposiciones y artículos, nada de estilo telegrama—, de 10 a 14 "
+                "palabras, sin superar 100 caracteres en total, sin comillas, sin "
+                "explicaciones ni razonamiento previo.\n\n"
             ) + prompt
 
         try:

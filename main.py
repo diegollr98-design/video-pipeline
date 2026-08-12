@@ -65,7 +65,7 @@ def ingest_videos(video_paths, config):
     return added
 
 
-def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0):
+def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0, max_shorts=0):
     """Generate YouTube Shorts/TikToks from a gameplay clip."""
     logger = logging.getLogger(__name__)
 
@@ -93,6 +93,20 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
             f"Shorts: {chunk_duration:.0f}s gameplay / {short_real_dur:.0f}s por short "
             f"= {num_shorts} shorts (= {num_shorts} peticiones de OpenRouter)"
         )
+        # Tope explicito para las corridas de VALIDACION. `generate_per_video`
+        # de config.yaml NO sirve para esto: solo se usa cuando no hay duracion
+        # de chunk, asi que un chunk de 33 min pide 50 shorts pase lo que pase.
+        # Con 2,2 min de reloj por short medidos, esos 50 son ~1h50 de las 2h30
+        # de la corrida y ~50 de sus ~56 peticiones: el 73% del reloj y el 85%
+        # de la cuota para ejercitar un gemelo que con 3-5 ya queda medido.
+        tope = max_shorts or 0
+        if tope and num_shorts > tope:
+            logger.warning(
+                f"Shorts LIMITADOS a {tope} por --max-shorts (salian {num_shorts}). "
+                f"Se ahorran {num_shorts - tope} peticiones y ~{(num_shorts - tope) * 2.2:.0f} "
+                f"min de reloj. El gameplay sobrante NO se usa en esta corrida."
+            )
+            num_shorts = tope
     else:
         num_shorts = shorts_config.get("generate_per_video", 2)
 
@@ -358,6 +372,10 @@ def main():
                              "_story.txt son lo que se mide, y cleanup_temp los destruía")
     parser.add_argument("--no-shorts", action="store_true",
                         help="Desactiva la generación de shorts en esta corrida")
+    parser.add_argument("--max-shorts", type=int, default=0,
+                        help="Tope de shorts por video (0 = sin tope). Para corridas de "
+                             "VALIDACION: con 3-5 se mide el gemelo igual y se ahorra el "
+                             "85%% de la cuota y el 73%% del reloj")
     parser.add_argument("--no-audit", action="store_true",
                         help="No auditar la salida al terminar. OJO: sin veredicto, "
                              "el dashboard NO ofrece el vídeo para subir")
@@ -449,7 +467,9 @@ def main():
 
                 # Phase 2b: Generate shorts from the same chunk
                 if not args.dry_run and config.get("shorts", {}).get("enabled", False) and not args.no_shorts:
-                    shorts_generated = generate_shorts_for_video(chunk_path, video_num, config, chunk_duration)
+                    shorts_generated = generate_shorts_for_video(
+                        chunk_path, video_num, config, chunk_duration,
+                        max_shorts=getattr(args, 'max_shorts', 0))
                     if shorts_generated > 0:
                         logger.info(f"Generados {shorts_generated} shorts para video {video_num}")
 

@@ -43,6 +43,11 @@ QUOTA_COST = {
     # único contador — dos contadores distintos harían que el corte preventivo
     # de `QuotaMeter` dejara de proteger.
     "videosInsert": 1600,
+    # La miniatura se sube aparte del vídeo (`thumbnails.set`) y cuesta 50. Sin
+    # esta línea, `thumbnail_generator.py` producía una miniatura cuidada que no
+    # llegaba a YouTube: la portada acababa siendo un fotograma al azar del
+    # gameplay. Una subida completa son 1.650 unidades = 6 al día.
+    "thumbnailsSet": 50,
 }
 
 # Marcadores de idioma. La API no rellena defaultAudioLanguage de forma fiable,
