@@ -26,6 +26,7 @@ import requests
 from modules.competitor_scout import (
     QUOTA_COST, QuotaMeter, QuotaExhausted, load_state, save_state, _data_dir,
 )
+from modules.utils import huella_auditor
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,17 @@ def lee_veredicto(video):
             d = json.load(f)
         d.setdefault("ok", False)
         d.setdefault("fallos", [])
+        # Un veredicto CADUCA si los criterios cambiaron desde que se emitió.
+        # `video_002_audit.json` decía ok:true con un auditor 47 min más viejo
+        # que la comprobación que lo habría tumbado, y el botón de subir seguía
+        # activo. Un verde de otro auditor es un desconocido, no un sano (§16).
+        actual = huella_auditor()
+        if d.get("auditor") != actual:
+            emitida = d.get("auditor") or "sin huella (anterior a este control)"
+            return {"ok": False, "medido": False, "fecha": d.get("fecha"),
+                    "caducado": True,
+                    "fallos": [f"veredicto CADUCADO: se emitió con otro auditor "
+                               f"({emitida}, ahora {actual}). Re-audita el vídeo."]}
         return d
     except Exception as e:
         return {"ok": False, "medido": False,

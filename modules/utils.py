@@ -101,6 +101,39 @@ def calculate_target_words(duration_seconds, config):
     return max(min_w, min(target, max_w))
 
 
+_HUELLA_FUENTES = ("scripts/audit_run.py", "scripts/eval_sync.py")
+
+
+def huella_auditor():
+    """Huella de los CRITERIOS con los que se emitió un veredicto de auditoría.
+
+    Un veredicto en verde no caducaba al cambiar el auditor, y eso ya pasó de
+    verdad: `output/video_002_audit.json` decía `ok:true` (12-ago 16:43) sobre un
+    vídeo del que Diego se quejó, porque la comprobación que lo habría cazado se
+    escribió 47 minutos DESPUÉS (17:30). El dashboard seguía ofreciendo ese vídeo
+    para subir a YouTube — con el certificado de un auditor que ya no existía.
+
+    Se hashea el fichero entero, no un número de versión a mano: un `VERSION = 3`
+    que hay que acordarse de subir es una garantía en prosa, y aquí las garantías
+    en prosa fallan (§17). El precio es que tocar el auditor obliga a re-auditar;
+    es el lado barato del default (§16) y cuesta tiempo, no cuota.
+    """
+    import hashlib
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    h = hashlib.sha256()
+    for rel in _HUELLA_FUENTES:
+        ruta = os.path.join(raiz, rel.replace("/", os.sep))
+        try:
+            with open(ruta, "rb") as f:
+                h.update(f.read())
+        except OSError:
+            # Sin poder leer los criterios NO se puede afirmar que un veredicto
+            # siga valiendo. Se devuelve una huella imposible de casar en vez de
+            # un valor por defecto que haría pasar cualquier veredicto viejo.
+            return "ilegible"
+    return h.hexdigest()[:12]
+
+
 def check_dependencies():
     missing = []
     for name in ("ffmpeg", "ffprobe"):

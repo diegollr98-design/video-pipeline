@@ -986,12 +986,20 @@ with tab_subir:
             _aud = _item.get("auditoria") or {}
             if not _item.get("publicable"):
                 _fallos = _aud.get("fallos") or ["sin veredicto"]
-                if not _aud.get("medido"):
+                _stem = os.path.basename(_item["video"])[: -len("_final.mp4")]
+                _recmd = f"python scripts/audit_run.py --stem {_stem}"
+                if _aud.get("caducado"):
+                    st.error(
+                        "**Veredicto caducado.** Se emitió con un auditor distinto "
+                        "del actual, así que no dice nada sobre el código de hoy. "
+                        f"Vuelve a auditarlo:\n\n`{_recmd}`"
+                    )
+                elif not _aud.get("medido"):
                     st.error(
                         "**Sin auditar.** Este vídeo no se ha medido, así que no se "
                         "sabe si es publicable — y eso no es lo mismo que estar bien. "
-                        "Corre `python scripts/audit_run.py --keep-temp` sobre la "
-                        "corrida, o relánzala con `--keep-temp`."
+                        f"Necesita el `.ass` en `temp/` (relanza con `--keep-temp`) y "
+                        f"luego:\n\n`{_recmd}`"
                     )
                 else:
                     st.error(
@@ -1000,9 +1008,10 @@ with tab_subir:
                         + "\n".join(f"- {x}" for x in _fallos)
                     )
                 st.caption(
-                    f"Veredicto de {_aud.get('fecha', '?')}. Si aun así quieres "
-                    f"subirlo, borra `{os.path.basename(_item['video'])[:-len('_final.mp4')]}"
-                    f"_audit.json` — pero mira antes lo que dice."
+                    f"Veredicto de {_aud.get('fecha', '?')}. Borrar el "
+                    f"`{_stem}_audit.json` NO desbloquea nada: sin veredicto el "
+                    f"vídeo sigue fuera de la cola, que es el default barato. El "
+                    f"único override es editar ese fichero a `\"ok\": true` a mano."
                 )
             elif _aud.get("fecha"):
                 st.success(f"Auditoría en verde ({_aud['fecha']}): sin defectos MEDIBLES. "

@@ -33,6 +33,7 @@ from scripts.eval_sync import (  # noqa: E402
     lee_ass, extrae_audio, transcribe, empareja, peor_tramo,
     pausas_fuera_de_puntuacion,
 )
+from modules.utils import huella_auditor  # noqa: E402
 
 OK, MAL, AVISO = "  OK  ", " FALLA", " AVISO"
 
@@ -524,6 +525,9 @@ def escribe_veredicto(video, fallos, medido=True):
             "ok": medido and not fallos,
             "medido": medido,
             "fallos": fallos,
+            # Con qué CRITERIOS se emitió. Sin esto un veredicto en verde
+            # sobrevive a un auditor que ya no existe: pasó con video_002.
+            "auditor": huella_auditor(),
             "fecha": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
         }, f, ensure_ascii=False, indent=2)
     return destino
