@@ -359,6 +359,47 @@ _STOPWORDS_EN = frozenset((
 _RE_CHAR_EXTRANO = re.compile(r"[^\w\s.,;:!?¡¿\"'«»()\[\]\-–—…%€$/&+*=@#\n]", re.UNICODE)
 
 
+# El modelo se ANOTA A SÍ MISMO al final de la historia. Caso real cazado por
+# `/eval` el 12-ago-2026: el guion terminaba en
+#
+#     "...que pienso defender hasta el final.PALABRAS: 1558"
+#
+# y eso se NARRÓ y se SUBTITULÓ — el último cue del `.ass` del fixture era
+# literalmente `1558.`. `_detectar_basura` no puede verlo: exige una RÁFAGA de
+# >=3 tokens anómalos distintos en 60 palabras, y esto son dos tokens, uno de
+# ellos un número limpio. Es la clase [BASURA-01] otra vez pero por la COLA, no
+# por la cabecera ni por el cuerpo: cada vez que se ha tapado un sitio, el
+# modelo ha aparecido por el siguiente (§17, 2.º corolario).
+_RE_META_FINAL = re.compile(
+    r"(?:^|[\s.,;:!?])(?:"
+    r"palabras\s*[:=]\s*\d+"
+    r"|n[úu]mero\s+de\s+palabras\s*[:=]?\s*\d+"
+    r"|total\s*[:=]?\s*\d+\s*palabras?"
+    r"|word\s*count\s*[:=]?\s*\d+"
+    r"|words?\s*[:=]\s*\d+"
+    r"|\(\s*\d+\s*palabras?\s*\)"
+    r"|\[?\s*fin\s+de\s+la\s+historia\s*\]?"
+    r")\s*[.\]\)]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_trailing_metadata(texto):
+    """Quita la auto-anotación del modelo al FINAL del guion.
+
+    Devuelve `(texto_limpio, quitado)`. Solo mira la cola y solo borra si casa
+    un patrón de metadato conocido: no puede comerse narración.
+    """
+    quitado = ""
+    for _ in range(3):  # puede venir apilado: "FIN DE LA HISTORIA. PALABRAS: 1558"
+        m = _RE_META_FINAL.search(texto)
+        if not m:
+            break
+        quitado = (texto[m.start():].strip() + " " + quitado).strip()
+        texto = texto[:m.start()].rstrip()
+    return texto, quitado
+
+
 def _detectar_basura(texto, ventana=60, umbral=3):
     """¿Hay una RÁFAGA de texto degenerado en el cuerpo? Devuelve (bool, motivo).
 
@@ -886,6 +927,15 @@ def generate_story(target_words, style, config):
         story = story.strip() + "\n\n" + cierre.strip()
         word_count = len(story.split())
         logger.info(f"Cierre anadido: {len(cierre.split())} palabras -> {word_count} totales")
+
+    # El modelo se anota a sí mismo al final ("PALABRAS: 1558") y eso se NARRA.
+    # Va ANTES del truncado: si no, el metadato cuenta como palabras del objetivo
+    # y además el truncado conserva justo la cola, que es donde vive.
+    story, meta = _strip_trailing_metadata(story)
+    if meta:
+        # Ruidoso a propósito (§13): esto llegó a subtitularse en el fixture.
+        logger.warning(f"Quitado metadato del modelo al final del guion: {meta!r}")
+        word_count = len(story.split())
 
     # Truncate if overshooting (conservando el desenlace: ver _truncate_to_words)
     if word_count > target_words * 1.2:

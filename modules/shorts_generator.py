@@ -13,6 +13,7 @@ from modules.utils import _find_exe, load_config, get_video_duration
 from modules.script_generator import (
     _call_openrouter, _parse_title_and_speech, _ensure_title_at_start, _validar_salida,
     _es_fallo_solo_puntuacion, _palabras_entre_signos, _PUNTUACION_P90_MAX,
+    _strip_trailing_metadata,
 )
 from modules.tts_engine import run_tts
 from modules.subtitle_builder import vtt_to_ass
@@ -192,6 +193,14 @@ def _generate_short_story(style, config, avoid=None):
                 f"El modelo no devolvió un short utilizable tras {intentos} intentos. "
                 f"Último motivo: {motivo}"
             )
+
+    # El gemelo comparte el defecto: el modelo se anota a sí mismo al final
+    # ("PALABRAS: 1558") y eso se narra y se subtitula. Cazado en el vídeo largo
+    # por `/eval`; aquí se aplica igual porque es la MISMA llamada al mismo
+    # modelo con el mismo tipo de prompt (§11: fix no propagado al gemelo).
+    speech, meta = _strip_trailing_metadata(speech)
+    if meta:
+        logger.warning(f"Short: quitado metadato del modelo al final: {meta!r}")
 
     speech = _ensure_title_at_start(title, speech)
 
