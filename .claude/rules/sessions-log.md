@@ -14,6 +14,34 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.7 — 2026-08-12 — Revisión del 12-ago: la palanca era la longitud de frase, no las comas ✅
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_revision_12ago.md`. El panel **refutó
+la evidencia principal del SEED**: el "primer veredicto limpio del auditor" se emitió a las 16:43 con un
+auditor reescrito a las 17:13 y un guardia de las 17:30 — y el dashboard seguía ofreciendo ese vídeo
+para **subir a YouTube**. Cambios: veredictos firmados con la **huella del auditor** [AUDIT-01];
+**partidor de frases en código** (`_ensure_breathing_periods`), que es la palanca dominante;
+`_ensure_title_at_start` arreglado (mutilaba la 1.ª frase y **borraba frases legítimas**);
+auditor cortando por **pausas medidas acústicamente** en vez de por densidad de comas [COMA-04];
+`target_wpm` 160 → **187**; `_strip_trailing_metadata` [BASURA-02]; y el cue de fin de frase que se iba
+mientras la voz seguía sonando [SUBT-01].
+**Incidentes:** [AUDIT-01] [COMA-04] [BASURA-02] [SUBT-01].
+**Verificación:** A/B acústico controlado con edge-tts sobre el guion REAL de 26 min (misma entrada, dos
+códigos): frase mediana **48 → 15**, pausas sin ningún signo detrás **86 → 47**, wpm 201,4 → 187,3;
+barrido de `cada` en 12/18/25 antes de fijar la constante. `target_wpm` recalibrado sobre el AUDIO y
+**después** del partidor (n=2: 187,3 y 188,0). `/eval` completo con shorts: **pausas inventadas 0,0 por
+1000**, ratio 0,779 → **0,949**, 6/6 títulos únicos — y marcó `FALLA` en voz sin subtítulo (1,60 s), que
+era **efecto de mi propio partidor** y se cerró a **0,00 s** con starts intactos, 0 solapes y fin del
+título Δ 0,0000 s.
+**Lo que esto enseña:** (a) **dos instrumentos propios mintieron y la calibración los cazó** — el
+emparejador por reloj de habla daba 8% de acierto y sus números (103 → 170) eran basura plausible; con
+Whisper independiente (98-100%) el diagnóstico cambia: las pausas largas caen TODAS en punto y el
+defecto real son respiraciones cortas; (b) **[COMA-03] ya había medido el día anterior** que las comas
+eran la palanca débil, y el fix del 12-ago las atacó igualmente: el ledger existía y no se consultó;
+(c) el guardia de comas juzgaba el guion **crudo**, que el pipeline reescribe aguas abajo.
+**Pendiente:** **no hay vídeo largo nuevo** — todo se midió sintetizando el guion real, no produciendo.
+"Cuesta de entender" sigue sin verificarse con el oído de Diego. Disco: 659 MB liberados, **15 GB
+libres** (una corrida larga pide ~12). `input/` son 13,8 GB y mover a D: sigue aplazado.
+
 ## v0.6 — 2026-08-12 — El vídeo del 11-ago no era un problema de comas: era 3 defectos que nadie medía ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) **reordenó el SEED**: refutó que las comas
 explicaran wpm y ratio (la voz articula igual; 90% del delta es silencio, y del silencio 63% son
