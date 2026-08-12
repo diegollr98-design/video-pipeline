@@ -14,6 +14,36 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.6 — 2026-08-12 — El vídeo del 11-ago no era un problema de comas: era 3 defectos que nadie medía ✅
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) **reordenó el SEED**: refutó que las comas
+explicaran wpm y ratio (la voz articula igual; 90% del delta es silencio, y del silencio 63% son
+PUNTOS), que el objetivo de 8,5 comas/100 fuera alcanzable (techo real **5,59**) y que el 10-ago
+tuviera ratio 1,00 (**0,894**). Y destapó tres defectos que el SEED no nombraba, dos peores que las
+comas. Cerrados: **[CIERRE-01]** la historia se quedaba sin final por DOS caminos (el `while` salía sin
+pedir el desenlace — 1 de 3 corridas — y `_truncate_to_words` decapitaba el epílogo); **[ANCLA-05]**
+ventana con el interior FABRICADO por stable-ts (26 de 29 palabras con duración idéntica + 2 huecos
+inventados de los que el cierre retenía 0,80 s cada uno); **[GATE-02]** el auditor era ciego POR
+CONSTRUCCIÓN a la cobertura y ahora **corta** la cola de subida; **[TITULO-01]** el eco del título
+parafraseado; **[TITULO-02]** título corto para el campo de 100 caracteres de YouTube; miniatura
+(`thumbnails.set`), `--max-shorts`, y un guardia de puntuación tras el juicio de Diego.
+**Incidentes:** [CIERRE-01] [ANCLA-05] [GATE-02] [GATE-03] [TITULO-01] [TITULO-02] [MAIN-01]
+[REVIEW-01] [COMA-03].
+**Verificación:** Corrida real de 45 min: **veredicto del auditor sin defectos MEDIBLES, el primero
+limpio**. El bug de [CIERRE-01] **se reprodujo a escala** y el `if` lo paró. Voz sin subtítulo
+8,3 → **0,76 s**; racha aplastada 28 → **2**; anclaje sobre las DOS producciones con `anchor_bench`:
+palabras desincronizadas 204 → 9 y 73 → 0, **0 ventanas empeoran**, fin del título Δ 0,0000 s.
+**Lo que esto enseña:** (a) **un mock no ve que el modelo no responda lo que se le pide** — tres
+fallos pasaron los tests de los subagentes y solo salieron contra la API real: `max_tokens=200`,
+`Another option: "..."` camino del título de YouTube, y un `NameError` que compilaba limpio; (b) el
+gate **no es determinista** [GATE-03] y su comparación relativa necesita un A/B controlado; (c) dos de
+los tres hallazgos "de bulto" del propio review comparaban contra la **referencia equivocada** (un
+umbral de otro formato, un binario de otro commit).
+**Pendiente:** `seeds/SEED_revision_12ago.md` — 9 cambios en una sesión, diseñados y auditados por el
+mismo, y el **mismo error de clase dos veces el mismo día** (`NameError` fuera de alcance). Diego pidió
+revisarlos con seed fresco. Abierto: **longitud de frase** (la palanca dominante según el A/B del repo,
+sin tocar: mediana 48-59 palabras contra 13 de la corrida buena), el **salto de 1645 palabras** que
+introduce el truncado, el ratio 0,793, y **disco en 7,6 GB** (la corrida larga necesita ~12).
+
 ## v0.4 — 2026-08-10 — `/optimize`: 4 clases del ledger promovidas a regla ✅
 **Qué se hizo:** Primer `/optimize` desde el 05-ago (9 commits de por medio). Promovidas 4 clases:
 **instrumento no calibrado** (SYNC-01+INSTR-01+INSTR-02, n=3) → `produccion-loop.md` §D regla madre;
