@@ -333,6 +333,37 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         if n_dup:
             fallos.append(f"{largo} palabras narradas dos veces")
 
+        # --- puntuación narrativa [COMA-03]: el mismo guardia que ya corre en
+        # generación (`script_generator._validar_puntuacion`), aplicado sobre
+        # el guion COMPLETO. Sin comas, edge-tts inventa dónde respirar (medido:
+        # 88 pausas fuera de puntuación en la corrida del 12-ago con 1 sola
+        # coma en 5334 palabras). El guardia de generación acepta el MEJOR
+        # intento tras agotar reintentos en vez de abortar el vídeo — esta
+        # comprobación es la que le pone dientes: si ese "mejor intento" sigue
+        # por debajo del umbral, el vídeo NO entra en la cola de subida.
+        try:
+            from modules.script_generator import (
+                _densidad_comas, _PUNTUACION_MIN_COMAS_100, _PUNTUACION_MIN_PALABRAS,
+            )
+            n_texto = len(texto.split())
+            if n_texto >= _PUNTUACION_MIN_PALABRAS:
+                dens = _densidad_comas(texto)
+                est = OK if dens >= _PUNTUACION_MIN_COMAS_100 else MAL
+                print(f"{est} puntuación narrativa: {dens:.2f} comas/100 palabras "
+                      f"(mínimo {_PUNTUACION_MIN_COMAS_100}; sin comas edge-tts inventa "
+                      f"pausas a mitad de frase)")
+                if est == MAL:
+                    fallos.append(
+                        f"puntuación insuficiente: {dens:.2f} comas/100 palabras "
+                        f"(mínimo {_PUNTUACION_MIN_COMAS_100}) — la narración sonará con "
+                        f"pausas inventadas por edge-tts")
+            else:
+                print(f"{AVISO} puntuación narrativa: guion de {n_texto} palabras, "
+                      f"insuficiente para medir densidad de comas con fiabilidad "
+                      f"(mínimo {_PUNTUACION_MIN_PALABRAS})")
+        except Exception as e:
+            print(f"{AVISO} no se pudo comprobar la puntuación: {e}")
+
     # --- artefactos, duración y peso
     dur = float(_ffprobe(video, "duration")[0])
     size_gb = os.path.getsize(video) / 1024**3

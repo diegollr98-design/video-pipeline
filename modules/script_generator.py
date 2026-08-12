@@ -166,7 +166,83 @@ _ES_FUNCIONALES = {
 }
 
 
-def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
+# --- Guardia de puntuación narrativa [COMA-03] -------------------------------
+# `prompts/reddit_story.txt` y `prompts/short_story.txt` YA piden "una coma cada
+# 8-12 palabras" y "NUNCA pases de 30 palabras sin un punto". El modelo lo
+# ignora: medido sobre las historias reales en disco (texto CRUDO, antes de
+# `_ensure_breathing_commas`), la densidad de comas por 100 palabras es
+#
+#   BUENA (10-ago, publicable):      8.47/100 en el total; por bloque de 2000
+#                                     palabras: 9.95 / 7.20 / 8.14
+#   MALA  (11-ago):                  0.19/100 en el total; por bloque: 0.30 /
+#                                     0.20 / 0.00
+#   MALA  (12-ago, hoy):              0.02/100 en el total; por bloque: 0.00 /
+#                                     0.05 / 0.00
+#
+# Separación limpia con margen grande en ambos lados (mínimo BUENA 7.20 vs
+# máximo MALA 0.30). Se verificó que el umbral también aguanta el régimen de
+# los SHORTS (~150-280 palabras, una sola llamada): con ventanas deslizantes de
+# 150-200 palabras sobre los mismos tres textos, TODAS las ventanas BUENA caen
+# en >=3.0/100 y TODAS las ventanas MALA en <=2.0/100 — cero falsos en ambos
+# sentidos. Por debajo de 150 palabras la señal es ruido (con ventanas de 80
+# palabras aparecen falsos positivos y negativos: una sola coma de más o de
+# menos mueve la densidad 1,25 puntos), así que el guardia NO se aplica a
+# textos más cortos que eso (ni pena ni gloria: no hay evidencia para juzgar).
+#
+# El umbral se fija en el punto que separa con margen simétrico ambos regímenes:
+_PUNTUACION_MIN_COMAS_100 = 2.5
+_PUNTUACION_MIN_PALABRAS = 150
+
+# Prefijo del motivo, para que quien reintenta pueda distinguir "esto SOLO
+# falló por falta de comas" de cualquier otro motivo de rechazo (razonamiento
+# filtrado, basura, título vacío...) sin volver a parsear el texto.
+_MOTIVO_PUNTUACION_PREFIJO = "densidad de comas insuficiente"
+
+
+def _densidad_comas(texto):
+    """Comas por 100 palabras. Se pega a la palabra anterior, así que contar
+    ',' es equivalente a contar comas de verdad (no hay comas sueltas)."""
+    palabras = texto.split()
+    if not palabras:
+        return 0.0
+    return texto.count(",") / len(palabras) * 100
+
+
+def _validar_puntuacion(texto, umbral=_PUNTUACION_MIN_COMAS_100,
+                         min_palabras=_PUNTUACION_MIN_PALABRAS):
+    """¿Tiene este bloque suficiente puntuación interna para narrarse bien?
+
+    Sin comas, edge-tts se inventa dónde respirar (medido: 88 pausas fuera de
+    puntuación en la corrida del 12-ago, 1 sola coma en 5334 palabras). Ver
+    calibración completa junto a las constantes arriba.
+    """
+    palabras = texto.split()
+    if len(palabras) < min_palabras:
+        return True, ""  # sin suficiente texto para que la densidad signifique algo
+    dens = _densidad_comas(texto)
+    if dens < umbral:
+        return False, (
+            f"{_MOTIVO_PUNTUACION_PREFIJO}: {dens:.2f} comas/100 palabras "
+            f"(mínimo {umbral}); sin puntuación interna, edge-tts se inventa "
+            f"dónde respirar (§17 — ya falló pidiéndolo solo en el prompt)"
+        )
+    return True, ""
+
+
+def _es_fallo_solo_puntuacion(motivo):
+    """¿El único motivo de rechazo fue la falta de comas?
+
+    Se usa para decidir si, al agotar los reintentos, se acepta el mejor
+    intento en vez de abortar la corrida entera: la basura del modelo o un
+    título vacío son motivo de aborto (siempre lo fueron); la falta de comas
+    empeora la narración pero no la hace impublicable, así que no vale tirar
+    45 minutos de trabajo por ella.
+    """
+    return bool(motivo) and motivo.startswith(_MOTIVO_PUNTUACION_PREFIJO)
+
+
+def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech,
+                    exigir_puntuacion=True):
     """¿Esta generación es utilizable? Devuelve (bool, motivo).
 
     Sin esto, el razonamiento del modelo acababa como título en la miniatura y
@@ -201,6 +277,14 @@ def _validar_salida(title, speech, min_palabras_titulo, min_palabras_speech):
     hay_basura, motivo = _detectar_basura(speech)
     if hay_basura:
         return False, f"basura en el cuerpo del speech: {motivo}"
+
+    # Última: si todo lo anterior pasó, un rechazo aquí es SOLO por puntuación
+    # (lo que usa `_es_fallo_solo_puntuacion` para decidir si aceptar el mejor
+    # intento en vez de abortar la corrida entera).
+    if exigir_puntuacion:
+        ok_punt, motivo_punt = _validar_puntuacion(speech)
+        if not ok_punt:
+            return False, motivo_punt
 
     return True, ""
 
@@ -311,6 +395,11 @@ def _validar_continuacion(texto, min_palabras=200):
     hay_basura, motivo = _detectar_basura(texto)
     if hay_basura:
         return False, f"basura en el cuerpo de la continuación: {motivo}"
+
+    # Última: si todo lo anterior pasó, un rechazo aquí es SOLO por puntuación.
+    ok_punt, motivo_punt = _validar_puntuacion(texto)
+    if not ok_punt:
+        return False, motivo_punt
 
     return True, ""
 
@@ -434,14 +523,26 @@ Escribe MÍNIMO {WORDS_PER_BLOCK} palabras en este bloque.
 RECORDATORIO: Escribe en párrafos largos y fluidos. NO fragmentes en líneas cortas. NO uses comillas ni guiones de diálogo. Integra todo en narración continua."""
 
     intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
+    motivo = ""
+    mejor_puntuacion = None  # (title, speech, dens): el mejor intento que SOLO fallaba por comas
     for intento in range(intentos):
         mensaje = prompt
         if intento:
-            mensaje = (
-                "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de la "
-                "historia. Empieza directamente por el TÍTULO en español, sin ningún texto "
-                "previo, y a continuación el speech.\n\n"
-            ) + prompt
+            if _es_fallo_solo_puntuacion(motivo):
+                mensaje = (
+                    "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste frases larguísimas sin "
+                    "comas internas y edge-tts se inventará dónde respirar. Antes de cada "
+                    "'y', 'pero', 'mientras', 'porque', 'aunque', 'sin' que une dos ideas, "
+                    "pon una coma. Ninguna frase de más de 20 palabras puede quedarse sin "
+                    "al menos una coma en medio. Reescribe el bloque entero con esa "
+                    "puntuación.\n\n"
+                ) + prompt
+            else:
+                mensaje = (
+                    "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de la "
+                    "historia. Empieza directamente por el TÍTULO en español, sin ningún texto "
+                    "previo, y a continuación el speech.\n\n"
+                ) + prompt
 
         raw = _call_openrouter([{"role": "user", "content": mensaje}], config)
         title, speech = _parse_title_and_speech(raw)
@@ -449,7 +550,27 @@ RECORDATORIO: Escribe en párrafos largos y fluidos. NO fragmentes en líneas co
                                      min_palabras_speech=200)
         if ok:
             return title, speech
+        if _es_fallo_solo_puntuacion(motivo):
+            dens = _densidad_comas(speech)
+            if mejor_puntuacion is None or dens > mejor_puntuacion[2]:
+                mejor_puntuacion = (title, speech, dens)
         logger.warning(f"Generación descartada ({motivo}); reintento {intento + 2}/{intentos}")
+
+    # §13: nunca fallback mudo. Pero abortar un vídeo de 30 min (45 min de
+    # trabajo) porque el modelo no metió suficientes comas es desproporcionado:
+    # la narración sale con más pausas inventadas de lo normal, no impublicable.
+    # Se acepta el MEJOR intento (mayor densidad de comas) entre TODOS los
+    # reintentos, no solo el último, y se deja constancia RUIDOSA de que salió
+    # por debajo del umbral.
+    if mejor_puntuacion is not None:
+        title, speech, dens = mejor_puntuacion
+        logger.warning(
+            f"Bloque 1: {intentos} intentos, TODOS por debajo del umbral de puntuación "
+            f"({_PUNTUACION_MIN_COMAS_100} comas/100 palabras). Se acepta el MEJOR intento "
+            f"({dens:.2f} comas/100 palabras) en vez de abortar el vídeo. Este bloque "
+            f"sonará con más pausas inventadas de lo normal."
+        )
+        return title, speech
 
     raise RuntimeError(
         f"El modelo no devolvió una historia utilizable tras {intentos} intentos. "
@@ -501,20 +622,47 @@ RECORDATORIO: Párrafos largos y fluidos. NO fragmentes. NO uses comillas ni gui
     # dejaba los demás sin red, o sea ~2 de cada 3 peticiones sin validar.
     intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
     motivo = ""
+    mejor_puntuacion = None  # (texto, dens): el mejor intento que SOLO fallaba por comas
     for intento in range(intentos):
         mensaje = instruction
         if intento:
-            mensaje = (
-                "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de "
-                "continuar la historia. Continúa la narración en español directamente, "
-                "sin ningún texto previo ni encabezado.\n\n"
-            ) + instruction
+            if _es_fallo_solo_puntuacion(motivo):
+                mensaje = (
+                    "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste frases larguísimas sin "
+                    "comas internas y edge-tts se inventará dónde respirar. Antes de cada "
+                    "'y', 'pero', 'mientras', 'porque', 'aunque', 'sin' que une dos ideas, "
+                    "pon una coma. Ninguna frase de más de 20 palabras puede quedarse sin "
+                    "al menos una coma en medio. Reescribe el bloque entero con esa "
+                    "puntuación.\n\n"
+                ) + instruction
+            else:
+                mensaje = (
+                    "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de "
+                    "continuar la historia. Continúa la narración en español directamente, "
+                    "sin ningún texto previo ni encabezado.\n\n"
+                ) + instruction
 
         texto = _call_openrouter(base + [{"role": "user", "content": mensaje}], config)
         ok, motivo = _validar_continuacion(texto)
         if ok:
             return texto
+        if _es_fallo_solo_puntuacion(motivo):
+            dens = _densidad_comas(texto)
+            if mejor_puntuacion is None or dens > mejor_puntuacion[1]:
+                mejor_puntuacion = (texto, dens)
         logger.warning(f"Continuación descartada ({motivo}); reintento {intento + 2}/{intentos}")
+
+    # Mismo criterio que en el bloque 1 (ver comentario ahí): la falta de comas
+    # no es motivo de aborto, es motivo de aviso ruidoso.
+    if mejor_puntuacion is not None:
+        texto, dens = mejor_puntuacion
+        logger.warning(
+            f"Continuación: {intentos} intentos, TODOS por debajo del umbral de "
+            f"puntuación ({_PUNTUACION_MIN_COMAS_100} comas/100 palabras). Se acepta el "
+            f"MEJOR intento ({dens:.2f} comas/100 palabras) en vez de abortar el vídeo. "
+            f"Este bloque sonará con más pausas inventadas de lo normal."
+        )
+        return texto
 
     raise RuntimeError(
         f"El modelo no devolvió una continuación utilizable tras {intentos} intentos. "
