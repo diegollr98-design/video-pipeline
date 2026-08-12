@@ -416,6 +416,20 @@ def _normalize_for_compare(text):
 # del título, que se NARRA y se SUBTITULA justo después de decir el título.
 _ECO_MAX_CHARS = 220      # hasta dónde se busca el final del fragmento inicial
 _ECO_UMBRAL = 0.60        # fracción de sus palabras que deben venir del título
+# Un eco tiene que ser un TROZO RECONOCIBLE del título, no una coincidencia.
+# Sin estos dos mínimos, con un título de 26 palabras cualquier frase corta llega
+# al 60% de solape por puro azar y se BORRA una primera frase legítima: medido,
+# "La casa familiar seguía vacía." y "El juez lo perdió todo." desaparecían
+# enteras. Es el falso positivo que introdujo el fix de [TITULO-01].
+_ECO_MIN_COMUNES = 4      # palabras en común mínimas
+_ECO_MIN_DEL_TITULO = 0.25  # y que cubran al menos este trozo del título
+
+# Palabras del título que deben coincidir al inicio para considerarlo un título
+# PARCIAL que hay que quitar. Con el umbral en 1 se comía cualquier coincidencia:
+# "Mi hermano lloró." contra el título "Mi Hermano Manipuló…" perdía el sujeto y
+# se narraba "<título>. lloró." en el segundo 1. Duplicar 3 palabras es feo;
+# mutilar la primera frase es un defecto que va a la intro y a la miniatura.
+_PREFIJO_MIN_PALABRAS = 4
 
 
 def _fin_de_frase(texto, limite=_ECO_MAX_CHARS):
@@ -442,6 +456,10 @@ def _es_eco_del_titulo(fragmento, titulo_palabras, umbral=_ECO_UMBRAL):
         return False
     sm = difflib.SequenceMatcher(None, frag, titulo_palabras, autojunk=False)
     comunes = sum(b.size for b in sm.get_matching_blocks())
+    if comunes < _ECO_MIN_COMUNES:
+        return False
+    if comunes / len(titulo_palabras) < _ECO_MIN_DEL_TITULO:
+        return False
     return comunes / len(frag) >= umbral
 
 
@@ -483,10 +501,16 @@ def _ensure_title_at_start(title, story):
         else:
             break
 
-    if overlap > 0:
+    if overlap >= _PREFIJO_MIN_PALABRAS:
         # Remove the overlapping partial title from the story start
         story = " ".join(story_words[overlap:])
         logger.info(f"Eliminado solapamiento de {overlap} palabras del inicio")
+    elif overlap:
+        # Coincidencia corta ("Mi hermano…"), no un título parcial. Se deja: la
+        # paráfrasis de verdad la caza el guardia de eco de abajo, que sí mide
+        # cuánto del título hay dentro del fragmento.
+        logger.info(f"Solapamiento de {overlap} palabra(s) NO eliminado: "
+                    f"es coincidencia, no un titulo parcial")
 
     # Segunda pasada: la COLA del título, parafraseada. El prefijo de arriba solo
     # come mientras las palabras coincidan literalmente, así que "Mi padrino DE
