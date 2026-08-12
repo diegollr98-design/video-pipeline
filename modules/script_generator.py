@@ -193,10 +193,43 @@ _ES_FUNCIONALES = {
 _PUNTUACION_MIN_COMAS_100 = 2.5
 _PUNTUACION_MIN_PALABRAS = 150
 
+# ⚠️ REVISADO 12-ago-2026: la densidad de comas de arriba SEPARA las corridas
+# observadas, pero NO predice el defecto, y este guardia medía el artefacto
+# equivocado. Las dos cosas, medidas:
+#
+#   (a) Artefacto equivocado. Juzgaba el guion CRUDO, y el pipeline lo reescribe
+#       después (`_clean_speech_for_tts` -> `_ensure_breathing_commas`). Crudo
+#       0,02 y 0,19 comas/100 -> NARRADO 3,11 y 2,74, o sea que las dos corridas
+#       "malas" ya PASABAN el umbral en la forma que de verdad se oye.
+#   (b) No predice. Con 10x más comas crudas (11-ago vs 12-ago) las pausas
+#       inventadas medidas acústicamente fueron 102 vs 86: indistinguible.
+#
+# Y desde que `_ensure_breathing_periods` parte las frases, la aritmética se
+# invierte: los puntos sustituyen comas, la densidad narrada cae a 0,84-1,24/100
+# y el umbral de 2,5 dispararía en TODAS las generaciones — ~12 peticiones por
+# vídeo del tope diario para no arreglar nada.
+#
+# Métrica nueva, ligada al MECANISMO: edge-tts respira cada ~5,9 s como mucho
+# (tramo de habla continua más largo medido en las dos producciones) ≈ 20-23
+# palabras. Si el texto no le da un signo dentro de esa ventana, se lo inventa.
+# Se mide el p90 de palabras entre signos SOBRE EL TEXTO NARRADO:
+#
+#   texto                          p90   max
+#   video_001 sin partidor          34    85
+#   video_002 sin partidor          31    78
+#   video_001 CON partidor          26    69
+#   video_002 CON partidor          26    69
+#
+# Umbral 30: pasa lo que el código ya sabe arreglar y caza el texto que ni
+# partiendo frases se deja puntuar (sin conectores donde cortar). Es un backstop
+# del código, no un sustituto: la garantía la da el partidor (§17), y quien corta
+# de verdad es la medición ACÚSTICA del auditor.
+_PUNTUACION_P90_MAX = 30
+
 # Prefijo del motivo, para que quien reintenta pueda distinguir "esto SOLO
 # falló por falta de comas" de cualquier otro motivo de rechazo (razonamiento
 # filtrado, basura, título vacío...) sin volver a parsear el texto.
-_MOTIVO_PUNTUACION_PREFIJO = "densidad de comas insuficiente"
+_MOTIVO_PUNTUACION_PREFIJO = "puntuacion insuficiente"
 
 
 def _densidad_comas(texto):
@@ -208,23 +241,48 @@ def _densidad_comas(texto):
     return texto.count(",") / len(palabras) * 100
 
 
-def _validar_puntuacion(texto, umbral=_PUNTUACION_MIN_COMAS_100,
-                         min_palabras=_PUNTUACION_MIN_PALABRAS):
-    """¿Tiene este bloque suficiente puntuación interna para narrarse bien?
+def _palabras_entre_signos(texto):
+    """Longitud de cada tramo de palabras sin ningún signo de puntuación."""
+    tramos, n = [], 0
+    for palabra in texto.split():
+        n += 1
+        if palabra.rstrip().endswith((".", ",", ";", ":", "!", "?")):
+            tramos.append(n)
+            n = 0
+    if n:
+        tramos.append(n)
+    return tramos
 
-    Sin comas, edge-tts se inventa dónde respirar (medido: 88 pausas fuera de
-    puntuación en la corrida del 12-ago, 1 sola coma en 5334 palabras). Ver
-    calibración completa junto a las constantes arriba.
+
+def _validar_puntuacion(texto, umbral=_PUNTUACION_P90_MAX,
+                         min_palabras=_PUNTUACION_MIN_PALABRAS):
+    """¿Podrá narrarse esto sin que edge-tts se invente dónde respirar?
+
+    Se mide sobre el TEXTO NARRADO (el que sale de `_clean_speech_for_tts`), no
+    sobre el crudo: el pipeline le mete puntos y comas después, así que juzgar el
+    crudo es juzgar un borrador que nadie oye. Ver la calibración completa junto
+    a las constantes arriba.
     """
     palabras = texto.split()
     if len(palabras) < min_palabras:
-        return True, ""  # sin suficiente texto para que la densidad signifique algo
-    dens = _densidad_comas(texto)
-    if dens < umbral:
+        return True, ""  # sin suficiente texto para que la medida signifique algo
+    try:
+        from modules.tts_engine import _clean_speech_for_tts
+        narrado = _clean_speech_for_tts(texto)
+    except Exception:
+        # Si no se puede reconstruir lo que se oirá, no se inventa un veredicto:
+        # este guardia se abstiene y deja que corte el auditor, que mide el audio.
+        return True, ""
+    tramos = sorted(_palabras_entre_signos(narrado))
+    if not tramos:
+        return True, ""
+    p90 = tramos[int(len(tramos) * 0.9)]
+    if p90 > umbral:
         return False, (
-            f"{_MOTIVO_PUNTUACION_PREFIJO}: {dens:.2f} comas/100 palabras "
-            f"(mínimo {umbral}); sin puntuación interna, edge-tts se inventa "
-            f"dónde respirar (§17 — ya falló pidiéndolo solo en el prompt)"
+            f"{_MOTIVO_PUNTUACION_PREFIJO}: p90 de {p90} palabras entre signos "
+            f"(máximo {umbral}) sobre el texto narrado; edge-tts respira cada "
+            f"~20 palabras y si no hay signo se inventa la pausa (§17 — ya falló "
+            f"pidiéndolo solo en el prompt)"
         )
     return True, ""
 

@@ -65,9 +65,26 @@ story:
   #
   #   target_wpm | palabras pedidas | audio resultante | ratio sobre chunk de 30 min
   #        150   |      4500        |     28,0 min     |   0,93
-  #        160   |      4800        |     29,9 min     |   1,00   <- elegido
+  #        160   |      4800        |     29,9 min     |   1,00   <- era esto
   #        195   |      5850        |     36,4 min     |   1,21   (6 min de gameplay repetido)
-  target_wpm: 160
+  #
+  # RECALIBRADO 12-ago-2026 a 187, y esta vez en el régimen de producción y con
+  # el instrumento correcto. Lo de arriba estaba MEDIDO SOBRE EL LOG, que arrastra
+  # el ratio del propio parámetro; medido sobre el AUDIO, la voz iba a 201-202 wpm
+  # en las dos producciones reales (5334 palabras / 1589 s y / 1582 s). De ahí que
+  # 160/201,4 = 0,794 fuese exactamente el "ratio 0,793 sin resolver" que se
+  # llevaba semanas atribuyendo a gameplay desperdiciado: era este número.
+  #
+  # 187 y no 201 porque el partidor de frases (`_ensure_breathing_periods`) BAJA
+  # la velocidad al meter puntos, y hay que calibrar DESPUÉS de él, no antes:
+  #     video_002 con partidor -> 187,3 wpm
+  #     video_001 con partidor -> 188,0 wpm      (n=2, dispersión 0,4%)
+  # Ambas sobre 5334 palabras de producción, medidas con ffprobe sobre el MP3.
+  #
+  # Efecto colateral buscado: con 187 el objetivo para un chunk de 2004 s pasa de
+  # 5345 a 6246 palabras, así que las 6979 que escribió el modelo el 12-ago se
+  # quedan por debajo del umbral de truncado (1,2x) y NO se corta el clímax.
+  target_wpm: 187
   min_words: 500
   max_words: 8000
   style: "dramatic"              # dramatic | funny | horror | wholesome

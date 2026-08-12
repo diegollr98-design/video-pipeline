@@ -12,7 +12,7 @@ import subprocess
 from modules.utils import _find_exe, load_config, get_video_duration
 from modules.script_generator import (
     _call_openrouter, _parse_title_and_speech, _ensure_title_at_start, _validar_salida,
-    _es_fallo_solo_puntuacion, _densidad_comas, _PUNTUACION_MIN_COMAS_100,
+    _es_fallo_solo_puntuacion, _palabras_entre_signos, _PUNTUACION_P90_MAX,
 )
 from modules.tts_engine import run_tts
 from modules.subtitle_builder import vtt_to_ass
@@ -124,15 +124,15 @@ def _generate_short_story(style, config, avoid=None):
     # Mismo guardia que en las historias largas: nemotron suelta a veces su
     # razonamiento y acababa como título del short, con un vídeo de 4,5s.
     #
-    # También comparte el guardia de puntuación [COMA-03]: medido sobre el
-    # .srt YA LIMPIO (post `_ensure_breathing_commas`) de los 50 shorts de la
-    # corrida de hoy, la densidad sigue en 0,00-5,71 comas/100 palabras — el
-    # mismo síntoma que en la historia larga, y esto es DESPUÉS del backstop de
-    # tts_engine. El texto CRUDO (antes de esa limpieza, que es lo que valida
-    # este guardia) es forzosamente igual o peor. `_validar_salida` corre el
-    # mismo `_validar_puntuacion` calibrado para el vídeo largo: se comprobó
-    # con ventanas de 150-200 palabras (el tamaño real de un short) sobre las
-    # tres historias de referencia que el umbral separa igual de limpio ahí.
+    # También comparte el guardia de puntuación, y desde el 12-ago SÍ se le
+    # aplica. Antes se dejaba fuera por COSTE: con la métrica vieja (densidad de
+    # comas sobre el texto crudo) 27 de 50 shorts caían bajo el umbral y activarlo
+    # costaba ~108 peticiones extra por vídeo. Ese coste era un artefacto de la
+    # métrica: medida la nueva —p90 de palabras entre signos sobre el texto
+    # NARRADO— los 4 shorts de la corrida del 12-ago dan p90 21, 21, 22 y 22
+    # contra un máximo de 30, así que pasan todos y el coste real es ~0.
+    # Tiene sentido: los shorts ya escriben frases cortas (mediana 18-21
+    # palabras), que es justo la propiedad que el guardia mide.
     intentos = max(1, int(config.get("openrouter", {}).get("max_retries", 3)))
     motivo = ""
     mejor_puntuacion = None  # (title, speech, dens): mejor intento que SOLO fallaba por comas
@@ -157,20 +157,8 @@ def _generate_short_story(style, config, avoid=None):
 
         raw = _call_openrouter([{"role": "user", "content": mensaje}], config)
         title, speech = _parse_title_and_speech(raw)
-        # El guardia de puntuación NO se aplica a los shorts. Medido sobre los
-        # 50 shorts de la corrida del 12-ago: 27 de 50 caen por debajo del
-        # umbral de 2,5 comas/100 YA DESPUÉS de `_ensure_breathing_commas`, así
-        # que el texto crudo falla aún más. Con `max_retries: 5` eso son hasta
-        # ~108 peticiones extra POR VÍDEO —de un tope de 1000 al día— para
-        # acabar aceptando el bloque igual, porque el reintento no garantiza un
-        # modo mejor del modelo. Y el defecto que Diego reportó es de la
-        # narración LARGA (26 min): una respiración mal puesta en un short de
-        # 40 s no es el mismo problema. `_ensure_breathing_commas` sigue
-        # actuando sobre ellos como hasta ahora.
-        # Si algún día se quiere activar aquí, primero MIDE cuántas peticiones
-        # cuesta de verdad: es un cambio de arquitectura disfrazado (§15).
         ok, motivo = _validar_salida(title, speech, min_palabras_titulo=8,
-                                     exigir_puntuacion=False,
+                                     exigir_puntuacion=True,
                                      min_palabras_speech=80)
         # La apertura se PIDE en el prompt y se IMPONE aquí. Pedirla no basta:
         # es la cuarta vez en este repo que una garantía en prosa no se cumple
@@ -181,20 +169,23 @@ def _generate_short_story(style, config, avoid=None):
         if ok:
             break
         if _es_fallo_solo_puntuacion(motivo):
-            dens = _densidad_comas(speech)
-            if mejor_puntuacion is None or dens > mejor_puntuacion[2]:
-                mejor_puntuacion = (title, speech, dens)
+            # Con la métrica nueva el MEJOR intento es el de p90 más BAJO
+            # (palabras seguidas sin signo), no el de más comas.
+            tramos = sorted(_palabras_entre_signos(speech))
+            p90 = tramos[int(len(tramos) * 0.9)] if tramos else 999
+            if mejor_puntuacion is None or p90 < mejor_puntuacion[2]:
+                mejor_puntuacion = (title, speech, p90)
         logger.warning(f"Short descartado ({motivo}); reintento {intento + 2}/{intentos}")
     else:
         # Mismo criterio que en la historia larga: la falta de comas no
         # justifica descartar el short entero (§13: nunca fallback mudo, así
         # que se deja constancia ruidosa de que salió por debajo del umbral).
         if mejor_puntuacion is not None:
-            title, speech, dens = mejor_puntuacion
+            title, speech, p90 = mejor_puntuacion
             logger.warning(
-                f"Short: {intentos} intentos, TODOS por debajo del umbral de puntuación "
-                f"({_PUNTUACION_MIN_COMAS_100} comas/100 palabras). Se acepta el MEJOR "
-                f"intento ({dens:.2f} comas/100 palabras) en vez de descartar el short."
+                f"Short: {intentos} intentos, TODOS por encima del máximo de puntuación "
+                f"({_PUNTUACION_P90_MAX} palabras entre signos). Se acepta el MEJOR "
+                f"intento (p90 {p90}) en vez de descartar el short."
             )
         else:
             raise RuntimeError(
