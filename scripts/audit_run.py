@@ -253,6 +253,42 @@ def evalua_titulo_youtube(video):
     return lineas, fallos
 
 
+# Tope de pausas que edge-tts se inventa (no hay ningún signo detrás), por cada
+# 1000 palabras. Calibrado sobre las producciones reales, no sobre el fixture:
+#   12-ago, el vídeo que Diego rechazó de oído ............ 16,1  -> FALLA
+#   el mismo guion con el partidor de frases puesto ....... 8,8   -> OK
+# Es un detector de REGRESIÓN con dos puntos de anclaje, no una vara absoluta de
+# calidad: dice "esto se parece al vídeo que Diego rechazó", que es exactamente
+# lo que el gate no supo decir el 12-ago.
+PAUSAS_INVENTADAS_POR_1000 = 12.0
+
+
+def pausas_inventadas(wav, story_path):
+    """Silencios que NO tienen ningún signo de puntuación detrás.
+
+    Devuelve (exceso_absoluto, por_1000_palabras). `None` si no se puede medir,
+    que NO es lo mismo que cero: el llamador debe tratarlo como desconocido.
+    """
+    try:
+        with open(story_path, encoding="utf-8") as f:
+            crudo = f.read()
+        from modules.tts_engine import _clean_speech_for_tts
+        # El texto que de verdad oyó el TTS, no el guion crudo: la limpieza mete
+        # comas y puntos de respiración, así que juzgar el crudo es juzgar un
+        # artefacto que el pipeline sobrescribe aguas abajo.
+        texto = _clean_speech_for_tts(crudo)
+    except Exception as e:
+        print(f"{AVISO} no se pudo reconstruir el texto narrado: {e}")
+        return None, None
+    palabras = len(texto.split())
+    if palabras < 500:
+        return None, None
+    signos = sum(texto.count(c) for c in ".,;:!?")
+    sil = _silencios(wav)
+    exceso = max(0, len(sil) - signos)
+    return exceso, exceso / palabras * 1000
+
+
 def audita_video(video, ass, story, chunk_dur=None, model="small"):
     print(f"\n=== VÍDEO LARGO: {os.path.basename(video)} ===")
     fallos = []
@@ -282,7 +318,38 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         print(f"{AVISO} sesgo POSITIVO: el subtítulo va por detrás de la voz (se busca negativo)")
 
     pausas = pausas_fuera_de_puntuacion(ass)
-    print(f"{OK if not pausas else AVISO} pausas fuera de puntuación: {len(pausas)}")
+    print(f"{OK if not pausas else AVISO} pausas fuera de puntuación (sobre el .ass, "
+          f"CIRCULAR — informativo): {len(pausas)}")
+
+    # --- pausas inventadas, ACÚSTICAMENTE. Esta es la que tiene dientes.
+    #
+    # La de arriba mide huecos en el .ass, o sea la alineación que este mismo
+    # auditor está juzgando: es la trampa de medición circular de §D, y además
+    # solo imprimía un AVISO. Diego escuchó el vídeo del 12-ago y dijo "hay
+    # muchas pausas, además en sitios que no debería, y cuesta de entender"
+    # mientras el veredicto salía en VERDE.
+    #
+    # Instrumento: silencedetect sobre el audio + recuento de signos sobre el
+    # texto EXACTO que recibió edge-tts. Es libre de emparejador (no hay que
+    # decidir qué silencio va con qué signo, solo contarlos), que es justo lo
+    # que salvó esta medición: el emparejador por reloj de habla falló su
+    # calibración al 8% sobre 26 min y sus números eran basura plausible.
+    exceso, por_mil = pausas_inventadas(wav, story)
+    if por_mil is not None:
+        est = OK if por_mil <= PAUSAS_INVENTADAS_POR_1000 else MAL
+        print(f"{est} pausas inventadas (acústico): {exceso} = {por_mil:.1f} por 1000 "
+              f"palabras (máximo {PAUSAS_INVENTADAS_POR_1000})")
+        if est == MAL:
+            fallos.append(
+                f"{exceso} pausas inventadas ({por_mil:.1f} por 1000 palabras, máximo "
+                f"{PAUSAS_INVENTADAS_POR_1000}): edge-tts respira donde no hay signo, "
+                f"que es lo que suena a 'pausas en sitios que no debería'")
+    else:
+        # No medible NO es sano, es desconocido, y el default cae del lado
+        # barato (§16). Antes esta rama no existía y el vídeo pasaba en silencio.
+        print(f"{MAL} pausas inventadas: NO se han podido medir (¿falta el guion "
+              f"en temp/, o es demasiado corto?)")
+        fallos.append("pausas inventadas: no medibles, así que no se sabe si suena bien")
 
     # --- COBERTURA: lo que ninguna métrica de desfase puede ver
     huecos, total_hueco = voz_sin_subtitulo(video, ass_words)
@@ -346,18 +413,24 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
             from modules.script_generator import (
                 _densidad_comas, _PUNTUACION_MIN_COMAS_100, _PUNTUACION_MIN_PALABRAS,
             )
-            n_texto = len(texto.split())
+            from modules.tts_engine import _clean_speech_for_tts
+            # SOBRE EL TEXTO NARRADO, no sobre el guion crudo. Medido: el guion
+            # del 12-ago tiene 0,02 comas/100 en crudo pero 3,11 después de la
+            # limpieza, y el del 11-ago 0,19 -> 2,74. Las dos PASAN el umbral en
+            # cuanto se mide lo que de verdad se oye, así que juzgar el crudo
+            # rechazaba guiones cuya forma hablada ya cumplía.
+            narrado = _clean_speech_for_tts(texto)
+            n_texto = len(narrado.split())
             if n_texto >= _PUNTUACION_MIN_PALABRAS:
-                dens = _densidad_comas(texto)
-                est = OK if dens >= _PUNTUACION_MIN_COMAS_100 else MAL
-                print(f"{est} puntuación narrativa: {dens:.2f} comas/100 palabras "
-                      f"(mínimo {_PUNTUACION_MIN_COMAS_100}; sin comas edge-tts inventa "
-                      f"pausas a mitad de frase)")
-                if est == MAL:
-                    fallos.append(
-                        f"puntuación insuficiente: {dens:.2f} comas/100 palabras "
-                        f"(mínimo {_PUNTUACION_MIN_COMAS_100}) — la narración sonará con "
-                        f"pausas inventadas por edge-tts")
+                dens = _densidad_comas(narrado)
+                # Sin dientes A PROPÓSITO: la densidad de comas no predice el
+                # defecto. Con 10x más comas crudas (11-ago vs 12-ago) las
+                # pausas inventadas fueron 102 vs 86, indistinguible. Quien
+                # corta es la métrica acústica de arriba, que mide la
+                # consecuencia en vez del correlato.
+                print(f"{OK if dens >= _PUNTUACION_MIN_COMAS_100 else AVISO} "
+                      f"puntuación narrativa (informativo): {dens:.2f} comas/100 "
+                      f"palabras sobre el texto NARRADO")
             else:
                 print(f"{AVISO} puntuación narrativa: guion de {n_texto} palabras, "
                       f"insuficiente para medir densidad de comas con fiabilidad "
