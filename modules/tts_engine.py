@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import re
+import subprocess
 import edge_tts
 import stable_whisper
-from modules.utils import get_video_duration
+from modules.utils import get_video_duration, _find_exe
 
 logger = logging.getLogger(__name__)
 
@@ -560,6 +561,84 @@ def _mediana(valores):
     return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
 
 
+# Cuánto puede alargarse como mucho el cue de una palabra que cierra frase.
+_FINAL_EXT_MAX = 0.80
+
+
+def _tramos_de_voz(audio_path, umbral_db=-35, dur_min=0.25):
+    """Tramos con voz del audio, como complemento de `silencedetect`.
+
+    Instrumento independiente del alineador, que es justo lo que hace falta aquí:
+    el problema es que el alineador cree que la palabra ya terminó.
+    """
+    r = subprocess.run(
+        [_find_exe("ffmpeg"), "-nostdin", "-i", audio_path, "-af",
+         f"silencedetect=noise={umbral_db}dB:d={dur_min}", "-f", "null", "-"],
+        capture_output=True, text=True)
+    ini = [float(x) for x in re.findall(r"silence_start:\s*(-?[\d.]+)", r.stderr)]
+    fin = [float(x) for x in re.findall(r"silence_end:\s*(-?[\d.]+)", r.stderr)]
+    tramos, cursor = [], 0.0
+    for i, s in enumerate(ini):
+        if s > cursor:
+            tramos.append((cursor, s))
+        cursor = fin[i] if i < len(fin) else s
+    tramos.append((cursor, float("inf")))
+    return tramos
+
+
+def _extend_sentence_final_words(words, audio_path):
+    """Alarga el cue de la última palabra de cada frase MIENTRAS siga sonando.
+
+    Medido con `/eval` el 12-ago-2026, después de meter `_ensure_breathing_periods`:
+    la voz sonaba **1,60 s en 3 tramos SIN ningún subtítulo en pantalla** (antes
+    0,00 s), y los tres huecos caían justo detrás de una palabra que cierra frase
+    (`LEGADO.` en 76,40 s, `TIMBRADO.` en 150,71 s, `1558.` en 179,49 s).
+
+    Causa: al final de frase el TTS ALARGA la última palabra (final lengthening)
+    y el alineador le da la duración de siempre, así que el subtítulo se va de
+    pantalla mientras la voz todavía la está diciendo. No es nuevo — lo que hizo
+    el partidor de frases fue multiplicar los sitios donde ocurre, de 13 a 28
+    ventanas en el fixture, y ahí se hizo visible.
+
+    Solo se alarga **dentro del tramo de voz**: si ya empezó el silencio, no se
+    toca. Eso preserva la especificación de que los subtítulos desaparecen en las
+    pausas (solo gameplay), que es una propiedad querida, no un efecto colateral.
+    """
+    if not words:
+        return words
+    try:
+        tramos = _tramos_de_voz(audio_path)
+    except Exception as e:
+        # Sin el instrumento no se inventa nada: se deja la alineación como está
+        # y se dice en voz alta (§13), en vez de estirar a ciegas.
+        logger.warning(f"No se pudieron medir los tramos de voz ({e}); "
+                       f"los cues de fin de frase se dejan sin alargar")
+        return words
+
+    alargadas = 0
+    for i, w in enumerate(words):
+        if not w["text"].rstrip().endswith((".", "!", "?")):
+            continue
+        fin_voz = None
+        for a, b in tramos:
+            if a <= w["end"] < b:
+                fin_voz = b
+                break
+        if fin_voz is None or fin_voz == float("inf"):
+            continue
+        tope = min(fin_voz, w["end"] + _FINAL_EXT_MAX)
+        if i + 1 < len(words):
+            tope = min(tope, words[i + 1]["start"] - 0.01)
+        if tope > w["end"] + 0.02:
+            w["end"] = tope
+            alargadas += 1
+
+    if alargadas:
+        logger.info(f"Cues de fin de frase alargados mientras seguia sonando la "
+                    f"voz: {alargadas}")
+    return words
+
+
 def _enforce_monotonic(words):
     """Ningun subtitulo puede empezar antes de que acabe el anterior.
 
@@ -864,6 +943,9 @@ def run_tts(text, audio_path, vtt_path, config):
 
     # Validate per-sentence: fix clustered words using sentence anchors
     words = _validate_and_fix_alignment(words, sentences)
+    # Va DESPUÉS del anclaje (que mueve ventanas enteras) y ANTES de la guarda de
+    # monotonía, que es la que corta cualquier solape que esto pudiera crear.
+    words = _extend_sentence_final_words(words, audio_path)
     words = _enforce_monotonic(words)
 
     # Build SRT
