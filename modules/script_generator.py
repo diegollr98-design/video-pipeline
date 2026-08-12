@@ -84,6 +84,18 @@ def _call_openrouter(messages, config, max_tokens=None):
             last_error = f"HTTP {resp.status_code}: {resp.text[:150]}"
             continue
 
+        # Un 400 normalmente es culpa nuestra (petición mal formada) y
+        # reintentarlo quema cuota para nada. PERO el proveedor envuelve en 400
+        # fallos suyos que SÍ son transitorios. Medido el 12-ago en una corrida
+        # real: `400 — "DEGRADED function cannot be invoked"` de Nvidia tumbó un
+        # short. En un bloque de historia habría abortado un vídeo de 2 h.
+        # Se reintenta SOLO con marcadores nombrados, no con cualquier 400.
+        if resp.status_code == 400 and any(
+                m in resp.text.lower() for m in
+                ("degraded", "temporarily", "overloaded", "try again")):
+            last_error = f"HTTP 400 transitorio del proveedor: {resp.text[:150]}"
+            continue
+
         if resp.status_code != 200:
             raise RuntimeError(f"Error de OpenRouter: {resp.status_code} — {resp.text[:300]}")
 
