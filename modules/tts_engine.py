@@ -128,8 +128,13 @@ def _clean_speech_for_tts(text):
     text = re.sub(r'\n{2,}', '\n', text)
     text = text.strip()
 
-    # Último paso: garantizar puntos de respiración. Va aquí, después de toda la
+    # Últimos pasos: garantizar la respiración. Van aquí, después de toda la
     # normalización, para contar sobre el texto exacto que oirá el TTS.
+    # ORDEN IMPORTANTE: primero los PUNTOS y luego las comas. Al partir una
+    # frase de 60 palabras en tres, el contador de las comas se resetea en cada
+    # punto nuevo y deja de meter comas que ya no hacen falta. Al revés, las
+    # comas se colocarían pensando en una frase que luego deja de existir.
+    text = _ensure_breathing_periods(text)
     text = _ensure_breathing_commas(text)
 
     return text
@@ -179,6 +184,113 @@ _ARRANQUE_DE_SINTAGMA = frozenset((
 # palabras sin puntuación, y en uno dudoso solo a partir de PALABRAS_LIMITE.
 PALABRAS_RESPIRO = 10
 PALABRAS_LIMITE = 16
+
+
+# Conectores que pueden ABRIR frase en español narrado. Empezar una frase por
+# "Y", "Pero", "Porque", "Cuando"… es normal al narrar; por "que" o "del" no.
+_CONECTORES_PUNTO = frozenset((
+    "y", "pero", "porque", "aunque", "mientras", "cuando", "entonces",
+    "luego", "despues", "después", "sino", "pues",
+))
+
+# Máximo de palabras sin PUNTO. Barrido con edge-tts REAL sobre la historia
+# completa del 12-ago (5334 palabras, A/B controlado: misma entrada, un solo
+# knob). La métrica de defecto es EXCESO = nº de silencios − nº de signos, que
+# es LIBRE DE EMPAREJADOR: cuenta pausas que no tienen ningún signo detrás, sin
+# necesidad de decidir cuál va con cuál (§D: el emparejador por reloj de habla
+# falló su calibración al 8% sobre 26 min, y sus números se descartaron).
+#
+#   cada   frase mediana   p90   wpm    silencio   EXCESO
+#   ----   -------------   ---   ----   --------   ------
+#   (sin)       48         127   201,4    14,5%      86
+#    25         28          41   194,4    17,2%      73
+#    18         21          32   193,0    17,7%      68
+#    12         15          28   187,3    19,8%      47
+#
+# Se elige 12: gana en las dos métricas de defecto y deja la frase mediana en
+# 15, al lado del 13 de la corrida del 10-ago — la única de la que Diego NO se
+# quejó. El coste es silencio (un punto son ~1,1 s y una coma ~0,44 s), pero
+# 19,8% sigue siendo MENOS que el 23,4% de esa corrida buena: la fracción de
+# silencio no es lo que le molesta, la longitud de frase sí.
+PALABRAS_FRASE_MAX = 12
+
+
+def _ensure_breathing_periods(text, cada=PALABRAS_FRASE_MAX):
+    """Parte las frases kilométricas metiendo PUNTOS, no comas.
+
+    MEDIDO (12-ago 2026, A/B controlado con edge-tts real sobre la peor frase del
+    vídeo — 197 palabras): la longitud de frase es la palanca dominante y las
+    comas NO la sustituyen.
+
+        variante                        pausas inventadas   cortes de frase falsos
+        1 frase, 4,57 comas/100 (la publicada)      +2              1
+        1 frase, 13,20 comas/100 (3x la corrida buena)  -3          1
+        frases cortas, CERO comas                    0              0
+
+    Es decir: con el triple de comas que la mejor corrida, una sola frase larga
+    SIGUE partiéndose sola; con frases cortas y ni una coma, no se parte nunca.
+    Por eso `_ensure_breathing_commas` metió 165 comas en el vídeo del 12-ago y
+    Diego siguió oyendo "muchas pausas, en sitios que no debería": las comas dan
+    0,44 s donde toca, pero no impiden el corte de 1,1 s donde no toca.
+
+    Las dos son necesarias y atacan defectos distintos:
+      - sin punto  -> edge-tts inventa un FIN DE FRASE (1,1 s) a mitad de idea
+      - sin coma   -> edge-tts inventa una RESPIRACIÓN (0,44 s) a mitad de idea
+
+    Se impone en código por la misma razón que las comas y el título: el prompt
+    lleva pidiendo "entre 15 y 25 palabras, nunca más de 30" desde siempre y el
+    modelo entregó frases de mediana 48, p90 127 y máximo 197 (§17).
+
+    La PRIMERA frase se deja intacta a propósito: es el título forzado, y es lo
+    que se narra mientras la intro está en pantalla. Un punto ahí metería 1,1 s
+    de silencio en mitad de la intro.
+    """
+    resultado = []
+    for parrafo in text.split("\n"):
+        palabras = parrafo.split()
+        salida = []
+        desde_punto = 0
+        titulo_en_curso = True  # la 1.ª frase es el título: no se toca
+        for palabra in palabras:
+            limpia = re.sub(r"[^a-záéíóúüñ]", "", palabra.lower())
+            if (salida and not titulo_en_curso and desde_punto >= cada
+                    and limpia in _CONECTORES_PUNTO):
+                previa_raw = salida[-1].rstrip()
+                previa = re.sub(r"[^a-záéíóúüñ]", "", previa_raw.lower())
+                # Mismo criterio que las comas: nunca partir una locución
+                # ("antes de que", "junto con") por la mitad.
+                if previa not in _NO_CORTAR_TRAS and not previa_raw.endswith(
+                        (".", "!", "?", ";", ":")):
+                    # El punto sustituye a una coma si ya la había, para no
+                    # dejar ",." — y se PEGA a la palabra previa, que es lo que
+                    # mantiene intacto el número de palabras.
+                    salida[-1] = previa_raw.rstrip(",") + "."
+                    palabra = palabra[:1].upper() + palabra[1:]
+                    desde_punto = 0
+
+            salida.append(palabra)
+            if palabra.rstrip().endswith((".", "!", "?")):
+                desde_punto = 0
+                titulo_en_curso = False
+            else:
+                desde_punto += 1
+
+        resultado.append(" ".join(salida))
+
+    final = "\n".join(resultado)
+
+    # MISMO INVARIANTE CON DIENTES que su gemelo: main.py indexa `aligned_words`
+    # por el número de palabras del título para saber cuándo arranca la intro.
+    # Los puntos se pegan a la palabra anterior y poner una mayúscula no divide
+    # nada, así que el conteo no puede moverse.
+    if len(final.split()) != len(text.split()):
+        raise RuntimeError(
+            "_ensure_breathing_periods cambió el número de palabras "
+            f"({len(text.split())} -> {len(final.split())}). Rompe el cálculo de "
+            "la intro en main.py; se aborta antes de generar nada."
+        )
+
+    return final
 
 
 def _ensure_breathing_commas(text):
