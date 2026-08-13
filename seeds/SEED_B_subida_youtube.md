@@ -36,14 +36,27 @@ está SUPERADO: no lo ejecutes.** Lee `modules/youtube_uploader.py` entero antes
    aplicación de escritorio, API de YouTube Data v3 habilitada). Sin él **no puedes probar nada
    real**: hasta que lo tengas, trabaja contra respuestas simuladas — pero lee la trampa nº1 de abajo
    antes de fiarte de un mock.
+
+   ⚠️ **El refresh token CADUCA A LOS 7 DÍAS si la pantalla de consentimiento está en "Testing".**
+   Verificado contra la fuente oficial (`developers.google.com/identity/protocols/oauth2`, 13-ago-2026):
+   *"A Google Cloud Platform project with an OAuth consent screen configured for an external user
+   type and a publishing status of 'Testing' is issued a refresh token expiring in 7 days, unless
+   the only OAuth scopes requested are a subset of name, email address, and user profile."*
+   El scope de este proyecto es `youtube.upload`, así que **NO** está en esa excepción.
+   **Consecuencia:** en "Testing" el pipeline dejaría de subir cada semana y habría que re-autorizar
+   a mano — lo contrario de autónomo. La salida es poner la app **"In production"**; el consentimiento
+   mostrará una advertencia de app no verificada que hay que aceptar **una vez**.
+   **Compruébalo tú antes de dar la subida por cerrada**: no basta con que funcione hoy. Y cuando el
+   refresh token muera, el fallo tiene que ser **ruidoso y accionable** en el dashboard, no un error
+   mudo en un log que nadie lee (§12, §13).
 3. **El preflight de cuota infra-reserva 50 unidades.** `puede_subir` comprueba solo las 1.600 de
    `videos.insert`; una subida completa son 1.650. Entre 1.600 y 1.649 restantes el preflight sale
    verde, sube 1,5 GB y la miniatura falla por cuota → portada = fotograma al azar. Degrada bien,
    pero es justo el fallo que el preflight existe para evitar.
-4. **Decide con Diego si la subida sigue exigiendo su OK.** Hoy el dashboard pide confirmación a
-   propósito. Quitarlo es media hora y convierte el pipeline en autónomo de verdad — **y también
-   significa que un vídeo defectuoso puede publicarse sin que nadie lo mire**. El auditor ya dio
-   verde a un vídeo que Diego rechazó de oído. **No lo decidas tú.**
+4. **DECIDIDO POR DIEGO (13-ago): la subida MANTIENE su OK en el dashboard.** No lo quites, no lo
+   propongas, no lo "mejores" con un modo automático opcional. El motivo es sólido: el auditor ya
+   dio verde a un vídeo que Diego rechazó de oído, así que la última puerta la abre una persona.
+   El pipeline es autónomo **hasta dejar el vídeo en la cola**; publicar es un acto humano.
 5. **Prueba el ciclo entero con un vídeo real** de `output/` (privado), incluida la miniatura, y
    comprueba en YouTube Studio que el título corto (`*_title_yt.txt`, ≤100 caracteres) llega bien.
 
