@@ -395,6 +395,24 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
                 fallos.append(f"basura del modelo: {motivo}")
         except Exception as e:
             print(f"{AVISO} no se pudo comprobar la basura: {e}")
+
+        # [BASURA-03]: el modelo se auto-audita en un BLOQUE de markdown al
+        # final ("**Resumen de los elementos solicitados incluidos:** 1.
+        # **Plan...**"), que es español CORRECTO y `_detectar_basura` no lo
+        # ve (no es una ráfaga léxica). Se mide EL FINAL del guion publicado,
+        # no solo la cabecera: si `_strip_trailing_metadata` falló en
+        # generación por una forma nueva, esta es la última red antes de que
+        # Diego lo mire.
+        try:
+            from modules.script_generator import _detectar_meta_cola
+            hay_meta, motivo_meta, _pos = _detectar_meta_cola(texto)
+            print(f"{MAL if hay_meta else OK} auto-anotación en la cola: "
+                  f"{motivo_meta if hay_meta else 'ninguna'}")
+            if hay_meta:
+                fallos.append(f"auto-anotación del modelo en la cola: {motivo_meta}")
+        except Exception as e:
+            print(f"{AVISO} no se pudo comprobar la auto-anotación en la cola: {e}")
+
         n_dup, largo = ngramas_repetidos(texto)
         print(f"{MAL if n_dup else OK} párrafos repetidos: {n_dup} n-gramas de 12 "
               f"(tramo más largo: {largo} palabras)")

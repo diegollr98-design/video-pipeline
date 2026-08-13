@@ -405,20 +405,126 @@ _RE_META_FINAL = re.compile(
     re.IGNORECASE,
 )
 
+# [BASURA-03] — el modelo se auto-audita en un BLOQUE de markdown, no en una
+# línea suelta. Caso real (video_004, `data/evidence/video_004_story.txt`):
+#
+#     "...se fortalece.**Cuenta final de palabras: ~1,598 palabras**
+#     (Perfecto, objetivo alcanzado).
+#
+#     **Resumen de los elementos solicitados incluidos:**
+#     1.  **Plan y ejecución:** ...
+#     2.  **Consecuencias:** ...
+#     3.  **Epílogo/Cierre:** ..."
+#
+# 55,8 de 208 s (27% del vídeo) salieron narrados y subtitulados
+# (`data/evidence/video_004_subs.ass`, cue 449 en adelante: "RESUMEN / DE /
+# LOS / ELEMENTOS / SOLICITADOS / INCLUIDOS: / 1. / PLAN..." hasta el último
+# cue). `_RE_META_FINAL` no lo caza: exige que el patrón llegue hasta `$` y
+# aquí, detrás del primer marcador, hay TRES párrafos más. `_detectar_basura`
+# tampoco: exige una RÁFAGA de >=3 anomalías léxicas (mezcla letra/dígito,
+# inglés, carácter raro) en 60 palabras, y este texto es español CORRECTO —
+# solo que habla DE la historia en vez de CONTARLA. Medido: `_detectar_basura`
+# sobre el texto completo devuelve `(False, '')`.
+#
+# Dos firmas, ninguna basada en vocabulario NARRATIVO (para no comerse una
+# historia real que hable de "un resumen" o "el plan de boda"):
+#   (a) una CABECERA en negrita/almohadilla que nombra el propio texto que la
+#       precede ("**Resumen...**", "**Cuenta final de palabras...**"), y
+#   (b) una LISTA numerada/con viñetas con sub-cabeceras en negrita
+#       ("1.  **Plan y ejecución:** ..."), que el prompt prohíbe expresamente
+#       en narración fluida ("NO fragmentes en líneas cortas... narración
+#       continua").
+# El marcador real venía PEGADO al punto final de la última frase narrativa,
+# SIN salto de párrafo ("...se fortalece.**Cuenta final..."), así que partir
+# por párrafos no sirve: se busca el marcador en cualquier posición del texto
+# y se corta en el ÚLTIMO fin de frase ANTES de él (`_detectar_meta_cola`).
+# OJO: la keyword no puede exigir el ':' PEGADO — "Resumen de los elementos
+# solicitados incluidos:" mete 4 palabras entre la keyword y el ':' que la
+# cierra, y una primera versión de este regex exigía `keyword\s*[:\*]`
+# (colon inmediato) y la dejaba pasar en blanco: solo cazaba el caso real
+# porque "**Cuenta final de palabras:**" aparecía ANTES en el mismo bloque.
+# Ahora se permite relleno (sin salto de línea ni '*', tope 60 caracteres —
+# una etiqueta de encabezado no es más larga que eso) entre la keyword y el
+# ':' de cierre, en cualquiera de las dos formas medidas ("...palabras:**" o
+# "...palabras**:").
+_RE_META_HEADER = re.compile(
+    r"[#*]{1,2}\s*(?:"
+    r"resumen"
+    r"|elementos\s+solicitados"
+    r"|notas?\s+finales?"
+    r"|checklist"
+    r"|estructura\s+de\s+la\s+(?:historia|respuesta)"
+    r"|cuenta\s+final"
+    r"|conteo\s+(?:final\s+)?de\s+palabras"
+    r"|recuento\s+(?:final\s+)?de\s+palabras"
+    r")[^\n*]{0,60}?:\**",
+    re.IGNORECASE,
+)
+
+# El caso real ("1.  **Plan y ejecución:** Llamada al abogado...") lleva el
+# ':' DENTRO de la negrita, antes del '**' de cierre — no detrás. Se aceptan
+# las dos formas ("**Label:**" y "**Label**:") para no depender de en qué
+# lado ponga el modelo el símbolo.
+_RE_META_LISTA = re.compile(
+    r"(?:^|\n)[ \t]*(?:\d+[.\)]|[-*•])[ \t]+\*\*[^\n*]{2,60}?(?::\*\*|\*\*:)",
+)
+
+
+def _detectar_meta_cola(texto):
+    """¿Hay un bloque de auto-anotación del modelo en la COLA del texto?
+
+    Devuelve `(bool, motivo, posición)`. Se usa desde `_strip_trailing_metadata`
+    (para cortarlo durante la generación) y desde `scripts/audit_run.py` (para
+    comprobar que ninguno sobrevivió en el guion YA PUBLICADO — la generación
+    puede fallar en cortarlo por una forma nueva que el regex no prevea, y el
+    auditor es la última red antes de que Diego lo mire).
+    """
+    posiciones = [m.start() for m in _RE_META_HEADER.finditer(texto)]
+    posiciones += [m.start() for m in _RE_META_LISTA.finditer(texto)]
+    if not posiciones:
+        return False, "", -1
+    primero = min(posiciones)
+    fragmento = texto[primero:primero + 100].replace("\n", " ").strip()
+    return True, f"auto-anotación del modelo en la cola: «{fragmento}...»", primero
+
 
 def _strip_trailing_metadata(texto):
-    """Quita la auto-anotación del modelo al FINAL del guion.
+    """Quita la auto-anotación del modelo en la COLA del guion.
 
-    Devuelve `(texto_limpio, quitado)`. Solo mira la cola y solo borra si casa
-    un patrón de metadato conocido: no puede comerse narración.
+    Dos formas medidas, las dos SOLO en la cola:
+    (a) una anotación corta pegada al final ("...PALABRAS: 1558") — la caza
+        `_RE_META_FINAL`, anclada al final de la cadena.
+    (b) un BLOQUE de auto-análisis en markdown, de varios párrafos
+        ("**Cuenta final...** ... **Resumen...:** 1. **Plan...** ...") — lo
+        caza `_detectar_meta_cola` en cualquier posición, y se corta en el
+        ÚLTIMO fin de frase ANTES de su primer marcador (puede venir PEGADO
+        sin separador de párrafo: ver comentario junto a los regex).
+
+    Devuelve `(texto_limpio, quitado)`. Si (b) encuentra el marcador pero NO
+    hay ningún fin de frase limpio por delante, se ABSTIENE de cortar esa
+    parte (podría estar comiéndose narración real) y deja que otros guardias
+    (`_detectar_basura`, el auditor) decidan.
     """
-    quitado = ""
+    quitado_piezas = []
+
+    hay_meta, _, primero = _detectar_meta_cola(texto)
+    if hay_meta:
+        prefijo = texto[:primero]
+        corte = 0
+        for mm in re.finditer(r"[.!?]+(?=\s|$|[*#\n])", prefijo):
+            corte = mm.end()
+        if corte:
+            quitado_piezas.append(texto[corte:].strip())
+            texto = texto[:corte].rstrip()
+
     for _ in range(3):  # puede venir apilado: "FIN DE LA HISTORIA. PALABRAS: 1558"
         m = _RE_META_FINAL.search(texto)
         if not m:
             break
-        quitado = (texto[m.start():].strip() + " " + quitado).strip()
+        quitado_piezas.append(texto[m.start():].strip())
         texto = texto[:m.start()].rstrip()
+
+    quitado = " ".join(p for p in quitado_piezas if p).strip()
     return texto, quitado
 
 
@@ -1029,6 +1135,24 @@ def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
         palabras_cierre += len(piezas[ini_cierre][0].split())
 
     cierre = "".join(f + s for f, s in piezas[ini_cierre:]).strip()
+
+    # [BASURA-03] backstop: `generate_story` llama a `_strip_trailing_metadata`
+    # ANTES de truncar, así que en el camino normal esto nunca dispara — pero
+    # si llega aquí basura sin limpiar (otra forma que el regex de arriba no
+    # reconozca, o un caller que se salte el orden), NO se asciende a
+    # "desenlace" en silencio. Un warning solo no defiende (§12): esto ABORTA,
+    # igual que la garantía de desenlace de más arriba, porque publicar esto
+    # como final es peor que no truncar.
+    hay_meta, motivo_meta, _ = _detectar_meta_cola(cierre)
+    hay_basura, motivo_basura = _detectar_basura(cierre)
+    if hay_meta or hay_basura:
+        motivo = motivo_meta if hay_meta else motivo_basura
+        raise RuntimeError(
+            f"Truncado: el desenlace que se iba a conservar como final del "
+            f"vídeo es basura del modelo ({motivo}). No se asciende a "
+            f"desenlace: se aborta el vídeo en vez de publicarlo con esto "
+            f"como cierre."
+        )
 
     # 2. El cuerpo: lo que quepa por delante dejándole sitio al cierre.
     presupuesto = max_words - palabras_cierre
