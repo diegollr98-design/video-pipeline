@@ -14,6 +14,39 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.8 — 2026-08-13 — El alineador repartía sobre la ventana entera de edge-tts 🔶
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_alineador_ventana_aplastada.md`.
+La **causa raíz del SEED quedó CONFIRMADA cuatro veces** (el agente ciego llegó a la misma línea sin
+verlo), pero el panel tumbó **3 de sus 5 criterios de aceptación** y la receta del tercer corpus.
+Cambios: **[ANCLA-06]** la rama de reparto usa los **tramos de voz medidos** en vez de `s_dur`;
+**[PARTIR-01]** `titulo_en_curso` sale del bucle de párrafos; **[BASURA-03]** el índice Markdown del
+modelo se narraba (27% del vídeo) y los tres guardias lo daban por limpio; **[INSTR-06]**; tercer
+corpus del banco congelado con su audio; `{stem}_story.txt` persistido en shorts.
+**Incidentes:** [ANCLA-06] [BASURA-03] [INSTR-06] · cierra [PARTIR-01] y [LOOP-01].
+**Verificación:** banco offline sobre **tres** corpus, con el control del instrumento en
+0,0027-0,0047 s. Ventana del caso: **22 palabras >0,5 s tarde → 0**, y **0 pronto** (sin
+sobrecorrección: `util=8` daba 0 tardías con 6,58 s de pantalla en blanco); p95 global +0,391 →
+**+0,119**; 11-ago 2 ventanas rotas → 0; **0 ventanas que EMPEORAN** en los tres. Guarda dura: el fix
+toca SOLO las ventanas de la rama (1 de 18 y 2 de 110), las otras **547 y 5261 palabras idénticas bit
+a bit**. El camino `span<=0.05`, que ningún corpus con audio ejercía, pasa de **+1,063 s y 13 tardías
+a +0,369 y 0**. Gemelo: 6 shorts reproducen su línea base, y con la rama **forzada** mejora
+(0,339 → 0,260). [BASURA-03]: 604 → 472 palabras cortando en la última frase real, **0 falsos
+positivos** en 5290 y 5334 palabras de historias buenas.
+**Lo que esto enseña:** (a) **el criterio de aceptación obvio era de un solo lado y pasaba por
+construcción** — un panel que solo hubiera validado el diagnóstico habría dado el visto bueno a un
+fix que vacía la pantalla; (b) el mecanismo tenía **dos** componentes (cola de silencio + pausas
+internas aplanadas) y el escalar solo cubría uno; (c) **el mapeo afín quedó refutado por medición**
+(+7,6 s): el ritmo crudo de una ventana aplastada es basura, conservarlo conserva el error; (d) un
+agente reconstruyó un corpus "histórico" **importando el módulo en caliente** con el fix de hoy
+aplicado, y escribió esa conclusión falsa dentro del propio instrumento [INSTR-06].
+**Pendiente:** **`/eval` + `output-audit` NO se han corrido** (el pipeline estaba ocupado; decisión de
+Diego: cerrar con banco offline y dejar el gate en cola) — **el cambio NO está cerrado del todo**. No
+hay vídeo nuevo. Dentro de la ventana, `|err| max` queda en **0,443 s** contra el objetivo de 0,30 y
+la mediana en +0,119 contra +0,10: no se ha tuneado la constante contra el propio instrumento
+([SYNC-01]), se declara. La ventana pasa de 0,00 a **0,39 s** de voz sin subtítulo. El corpus del
+10-ago **no es evaluable** para este fix (no se conservó su audio), y `data/evidence/` está
+gitignored: el tercer corpus vive solo en disco.
+
 ## v0.7 — 2026-08-12 — Revisión del 12-ago: la palanca era la longitud de frase, no las comas ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_revision_12ago.md`. El panel **refutó
 la evidencia principal del SEED**: el "primer veredicto limpio del auditor" se emitió a las 16:43 con un
