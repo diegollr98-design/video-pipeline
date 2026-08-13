@@ -75,16 +75,19 @@ story:
   # 160/201,4 = 0,794 fuese exactamente el "ratio 0,793 sin resolver" que se
   # llevaba semanas atribuyendo a gameplay desperdiciado: era este número.
   #
-  # 187 y no 201 porque el partidor de frases (`_ensure_breathing_periods`) BAJA
-  # la velocidad al meter puntos, y hay que calibrar DESPUÉS de él, no antes:
-  #     video_002 con partidor -> 187,3 wpm
-  #     video_001 con partidor -> 188,0 wpm      (n=2, dispersión 0,4%)
-  # Ambas sobre 5334 palabras de producción, medidas con ffprobe sobre el MP3.
+  # El partidor de frases (`_ensure_breathing_periods`) BAJA la velocidad al
+  # meter puntos, así que esto se calibra DESPUÉS de él y hay que RE-calibrarlo
+  # cada vez que se toca `PALABRAS_FRASE_MAX`. Ya ha pasado una vez el mismo día:
+  #     con PALABRAS_FRASE_MAX=12 -> 187,3 y 188,0 wpm   (valor viejo: 187)
+  #     con PALABRAS_FRASE_MAX=40 -> 199,9 y 198,1 wpm   (n=2, dispersión 0,9%)
+  # Las cuatro medidas, sobre 5334 palabras de producción con ffprobe sobre el
+  # MP3 real. El 12 se descartó porque metía pausas de punto donde bastaba una
+  # coma (lo cazó el oído de Diego); ver la tabla en `tts_engine`.
   #
-  # Efecto colateral buscado: con 187 el objetivo para un chunk de 2004 s pasa de
-  # 5345 a 6246 palabras, así que las 6979 que escribió el modelo el 12-ago se
+  # Efecto colateral buscado: con 199 el objetivo para un chunk de 2004 s pasa de
+  # 5345 a 6646 palabras, así que las 6979 que escribió el modelo el 12-ago se
   # quedan por debajo del umbral de truncado (1,2x) y NO se corta el clímax.
-  target_wpm: 187
+  target_wpm: 199
   min_words: 500
   max_words: 8000
   style: "dramatic"              # dramatic | funny | horror | wholesome

@@ -194,26 +194,39 @@ _CONECTORES_PUNTO = frozenset((
     "luego", "despues", "después", "sino", "pues",
 ))
 
-# Máximo de palabras sin PUNTO. Barrido con edge-tts REAL sobre la historia
-# completa del 12-ago (5334 palabras, A/B controlado: misma entrada, un solo
-# knob). La métrica de defecto es EXCESO = nº de silencios − nº de signos, que
-# es LIBRE DE EMPAREJADOR: cuenta pausas que no tienen ningún signo detrás, sin
-# necesidad de decidir cuál va con cuál (§D: el emparejador por reloj de habla
-# falló su calibración al 8% sobre 26 min, y sus números se descartaron).
+# Máximo de palabras sin PUNTO.
 #
-#   cada   frase mediana   p90   wpm    silencio   EXCESO
-#   ----   -------------   ---   ----   --------   ------
-#   (sin)       48         127   201,4    14,5%      86
-#    25         28          41   194,4    17,2%      73
-#    18         21          32   193,0    17,7%      68
-#    12         15          28   187,3    19,8%      47
+# ⚠️ ESTA CONSTANTE ESTUVO EN 12 Y ERA UN ERROR DE MEDICIÓN MÍO. La elegí
+# minimizando `EXCESO = nº silencios − nº signos`… y meter puntos AÑADE SIGNOS,
+# así que bajar el umbral mejoraba la métrica de forma mecánica, no porque
+# sonara mejor. Es la trampa de [SYNC-01] otra vez: la variable que manipulas
+# metida dentro del instrumento con el que eliges.
 #
-# Se elige 12: gana en las dos métricas de defecto y deja la frase mediana en
-# 15, al lado del 13 de la corrida del 10-ago — la única de la que Diego NO se
-# quejó. El coste es silencio (un punto son ~1,1 s y una coma ~0,44 s), pero
-# 19,8% sigue siendo MENOS que el 23,4% de esa corrida buena: la fracción de
-# silencio no es lo que le molesta, la longitud de frase sí.
-PALABRAS_FRASE_MAX = 12
+# Lo cazó el oído de Diego, no una métrica: "parece que haya puntos donde
+# debería haber comas, se hacen muchas pausas como si fueran puntos y eso hace
+# que se pierda un poco el hilo". Medido después con métricas que NO contienen
+# la variable manipulada (pausas largas ≥0,7 s y silencio total), sobre el mismo
+# pasaje de producción:
+#
+#   cada    frase mediana   pausas LARGAS   silencio   wpm
+#   -----   -------------   -------------   --------   -----
+#   (sin)        142              7          13,1%     227,8
+#    12           17             24  ← ×3,4  19,8%     206,9
+#    20           26             17          17,6%     214,5
+#    30           32             13          15,5%     221,4
+#    40           43             12          15,0%     222,2
+#
+# Con 12 se cuadruplicaban las pausas de punto (1,1-1,3 s cada una) y ADEMÁS
+# caían las comas de 21 a 12, porque cada punto resetea el contador de
+# `_ensure_breathing_commas`: le quitaba respiraciones cortas para ponerle
+# frenazos. Justo lo contrario de lo que hace falta.
+#
+# Se elige 40, y el criterio NO es la mediana sino la COLA. Sobre las dos
+# historias completas de producción, `cada=40` deja la mediana casi igual
+# (48→40, 42→40) pero aplasta el p90 de **127→58** y **79→55**: mueren las
+# frases monstruo, que son las que hacen perder el hilo, y se tocan lo mínimo
+# las frases normales. La mediana nunca fue el problema.
+PALABRAS_FRASE_MAX = 40
 
 
 def _ensure_breathing_periods(text, cada=PALABRAS_FRASE_MAX):
