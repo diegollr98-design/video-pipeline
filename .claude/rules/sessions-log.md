@@ -24,7 +24,7 @@ para **subir a YouTube**. Cambios: veredictos firmados con la **huella del audit
 auditor cortando por **pausas medidas acústicamente** en vez de por densidad de comas [COMA-04];
 `target_wpm` 160 → **187**; `_strip_trailing_metadata` [BASURA-02]; y el cue de fin de frase que se iba
 mientras la voz seguía sonando [SUBT-01].
-**Incidentes:** [AUDIT-01] [COMA-04] [BASURA-02] [SUBT-01].
+**Incidentes:** [AUDIT-01] [COMA-04] [BASURA-02] [SUBT-01] [LLM-01].
 **Verificación:** A/B acústico controlado con edge-tts sobre el guion REAL de 26 min (misma entrada, dos
 códigos): frase mediana **48 → 15**, pausas sin ningún signo detrás **86 → 47**, wpm 201,4 → 187,3;
 barrido de `cada` en 12/18/25 antes de fijar la constante. `target_wpm` recalibrado sobre el AUDIO y
