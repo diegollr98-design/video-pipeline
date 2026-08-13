@@ -1,5 +1,10 @@
 # SEED 1 — Cierre funcional del pipeline (3 huecos pequeños)
 
+> ⛔ **PARCIALMENTE HECHO — NO EJECUTAR TAL CUAL.** `components.html` ya está fuera. Los otros dos
+> huecos siguen vivos y están repartidos en **`SEED_C_competencia.md`** (directrices a shorts +
+> escaneo programado).
+
+
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
 
 ## Contexto

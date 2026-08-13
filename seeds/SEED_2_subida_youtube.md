@@ -1,5 +1,10 @@
 # SEED 2 — Subida automática a YouTube (el último paso para ser autónomo)
 
+> ⛔ **SUPERADO — NO EJECUTAR.** La subida se implementó el 11-ago (OAuth, `subir_video`,
+> `subir_miniatura`, cola con OK en el dashboard, preflight de cuota). Lo que queda vivo está en
+> **`SEED_B_subida_youtube.md`**.
+
+
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
 
 ## Contexto

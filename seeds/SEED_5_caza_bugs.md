@@ -1,5 +1,9 @@
 # SEED — Caza de bugs en el pipeline y el dashboard
 
+> ⛔ **REEMPLAZADO — NO EJECUTAR.** Usa **`SEED_D_caza_bugs.md`**, que acota la propiedad de
+> ficheros para poder correr en paralelo con los otros tracks.
+
+
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
 
 ## Qué es esto
