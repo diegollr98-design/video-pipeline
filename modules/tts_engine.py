@@ -221,12 +221,30 @@ _CONECTORES_PUNTO = frozenset((
 # `_ensure_breathing_commas`: le quitaba respiraciones cortas para ponerle
 # frenazos. Justo lo contrario de lo que hace falta.
 #
-# Se elige 40, y el criterio NO es la mediana sino la COLA. Sobre las dos
-# historias completas de producción, `cada=40` deja la mediana casi igual
-# (48→40, 42→40) pero aplasta el p90 de **127→58** y **79→55**: mueren las
-# frases monstruo, que son las que hacen perder el hilo, y se tocan lo mínimo
-# las frases normales. La mediana nunca fue el problema.
-PALABRAS_FRASE_MAX = 40
+# El criterio NO es la mediana sino la COLA: sobre las dos historias completas
+# de producción, partir deja la mediana casi igual (48→31, 42→32) pero aplasta
+# el p90 de **127→51** y **79→46**. Mueren las frases monstruo, que son las que
+# hacen perder el hilo, y las frases normales se tocan lo mínimo.
+#
+# Se elige 30 —y no el 40 que Diego prefirió de oído— porque es el único ajuste
+# bueno en los DOS ejes. A/B controlado de sincronismo (mismo texto, cuatro
+# ajustes, contra transcripción independiente):
+#
+#   cada   |err| medio   p95     peor tramo   >0,5 s tarde
+#   ----   -----------   -----   ----------   ------------
+#    12       0,177      0,280     -0,213           6
+#    20       0,196      0,496     +0,421          22
+#    30       0,164      0,200     -0,198           0     <- elegido
+#    40       0,191      0,484     +0,415          22
+#
+# ⚠️ Léase con cuidado: esto NO es monótono, así que la longitud de frase NO es
+# la causa del desfase. Lo que hay debajo es una patología LOCAL del alineador
+# ("Ventana aplastada en t=110,14 s: 57 palabras en 10,32 s = 331 wpm") que unos
+# cortes rompen y otros no. Con n=1 historia estos números NO ordenan la
+# constante: solo dicen que 30 es el único que sale bien en audio y en
+# sincronismo a la vez. Diego, de oído, no distinguía 26 / 32 / 43 palabras de
+# mediana, así que 30 no le cuesta nada perceptible.
+PALABRAS_FRASE_MAX = 30
 
 
 def _ensure_breathing_periods(text, cada=PALABRAS_FRASE_MAX):

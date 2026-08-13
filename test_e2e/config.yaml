@@ -38,9 +38,9 @@ video:
   preset: p2
   loop_gameplay: true
 story:
-  target_wpm: 199        # sincronizado con produccion (recalibrado sobre el AUDIO,
+  target_wpm: 196        # sincronizado con produccion (recalibrado sobre el AUDIO,
                          # no sobre el log, y DESPUES del partidor de frases con
-                         # PALABRAS_FRASE_MAX=40: n=2, 199,9 y 198,1 wpm)
+                         # PALABRAS_FRASE_MAX=30: n=2, 197,0 y 195,7 wpm)
   min_words: 200
   max_words: 8000
   style: dramatic
