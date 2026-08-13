@@ -390,6 +390,15 @@ def generate_short(gameplay_path, short_num, config, style="dramatic", speed=1.5
     logger.info(f"Titulo: {title}")
     logger.info(f"Palabras: {len(story.split())}")
 
+    # Persistir el guion, igual que main.py hace con `{stem}_story.txt` para el
+    # vídeo largo. Antes el `story` moría en memoria: sin él no hay forma de
+    # reproducir offline lo que de verdad se sintetizó (saltos de párrafo
+    # incluidos, que es la variable que toca `_ensure_breathing_periods`), y
+    # cualquier medición futura exigía una petición nueva de OpenRouter.
+    story_path = os.path.join(temp_dir, f"{stem}_story.txt")
+    with open(story_path, "w", encoding="utf-8") as f:
+        f.write(story)
+
     # 2. Generate NORMAL speed audio + perfect forced alignment
     audio_normal = os.path.join(temp_dir, f"{stem}_audio_normal.mp3")
     srt_path = os.path.join(temp_dir, f"{stem}_subs.srt")
