@@ -15,14 +15,37 @@ Competencia** · un módulo/script nuevo para la programación.
 `script_generator.py`, `youtube_uploader.py` · reescribir `config.yaml` (**añade** tu bloque al
 final marcado `# [track C]`).
 
-**Cuota compartida — coordinación obligatoria:**
-- **YouTube:** el contador vive en `data/competitors.json`, es un fichero **sin lock**, y lo
-  compartes con el track B sobre 10.000/día. Un escaneo con descubrimiento cuesta ~470 unidades.
-  **Solo uno de B y C puede llamar a la API real a la vez.** Confírmalo con Diego.
-- **OpenRouter:** presupuesto **≤30 peticiones** para este track (el debate del LLM y la
-  clasificación de canales). Verifica el tope con `GET /api/v1/credits` antes de gastar — **no lo
-  leas de un `.md`**, ese dato caduca ([DOC-01]: tres revisiones repitieron un valor falso porque
-  estaba escrito en `CLAUDE.md`).
+**OpenRouter:** presupuesto **≤30 peticiones** para este track (el debate del LLM y la
+clasificación de canales). Verifica el tope con `GET /api/v1/credits` antes de gastar — **no lo leas
+de un `.md`**, ese dato caduca ([DOC-01]: tres revisiones repitieron un valor falso porque estaba
+escrito en `CLAUDE.md`).
+
+## 🔴 EXCLUSIÓN MUTUA CON EL TRACK B — léelo antes de la primera llamada
+
+**El track B (`SEED_B_subida_youtube.md`) corre AHORA MISMO en otra sesión y comparte contigo la
+cuota de YouTube.** El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**:
+si los dos escribís a la vez se **pierden actualizaciones** y el corte preventivo deja de proteger.
+Para B eso significa comerse un `403` a mitad de una subida de 1,5 GB; para ti, que un escaneo se
+corte en falso o siga cuando ya no debería.
+
+> **REGLA: solo UNO de B y C puede hacer llamadas REALES a la API de YouTube a la vez.**
+> Tú gastas ~**470 unidades** por escaneo con descubrimiento (`search.list` cuesta 100 cada una y es
+> el gasto dominante); B gasta **1.650 por vídeo**. El tope es **10.000/día** para los dos juntos.
+
+**Protocolo, obligatorio (no es prosa: son pasos que dejan rastro):**
+1. **PIDE TURNO A DIEGO** antes de tu primer escaneo real. Mientras esperas, trabaja con los datos
+   ya cacheados en `data/competitors.json` y `data/competition_report.json`, que dan de sobra para
+   desarrollar la inyección en los prompts.
+2. **Anota el contador ANTES**: lee `data/competitors.json` y pega el valor en tu informe.
+3. Haz tu tanda de llamadas.
+4. **Anota el contador DESPUÉS** y **comprueba que el delta es el que esperabas**. **Si no cuadra,
+   otra sesión escribió encima: párate y avísale a Diego.** Ese descuadre es la firma de la
+   actualización perdida, y es la única forma de detectarla.
+5. Devuelve el turno diciéndolo explícitamente en tu informe final.
+
+**Tú SÍ eres el dueño de `QuotaMeter`** (`modules/competitor_scout.py`). Si arreglas la carrera con
+un lock atómico sobre el contador, **avisa a Diego para que se lo diga al track B**, porque hasta que
+mergéis los dos siguen dependiendo del protocolo humano de arriba.
 
 ## Los dos huecos
 

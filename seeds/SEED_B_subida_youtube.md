@@ -16,10 +16,29 @@
 `prompts/*` · reescribir `config.yaml` (si necesitas claves nuevas, **añade** un bloque al final
 marcado `# [track B]`).
 
-**Cuota de YouTube — coordinación obligatoria:** el contador vive en `data/competitors.json`, es un
-fichero sin lock, y lo compartes con el track C sobre un tope de **10.000 unidades/día**. Una subida
-completa son **1.650** (1.600 `videos.insert` + 50 `thumbnails.set`). **Solo uno de B y C puede
-hacer llamadas reales a la vez**: confírmalo con Diego antes de la primera.
+## 🔴 EXCLUSIÓN MUTUA CON EL TRACK C — léelo antes de la primera llamada
+
+**El track C (`SEED_C_competencia.md`) corre AHORA MISMO en otra sesión y comparte contigo la cuota
+de YouTube.** El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**: si los
+dos escribís a la vez se **pierden actualizaciones** y el corte preventivo deja de proteger — o sea,
+te comes un `403` a mitad de una subida de 1,5 GB.
+
+> **REGLA: solo UNO de B y C puede hacer llamadas REALES a la API de YouTube a la vez.**
+> Tú gastas **1.650 unidades por vídeo** (1.600 `videos.insert` + 50 `thumbnails.set`) de un tope de
+> **10.000/día**; C gasta ~470 por escaneo.
+
+**Protocolo, obligatorio (no es prosa: son pasos que dejan rastro):**
+1. **PIDE TURNO A DIEGO** antes de tu primera llamada real. No la hagas "solo para probar".
+2. **Anota el contador ANTES**: lee `data/competitors.json` y pega el valor en tu informe.
+3. Haz tu tanda de llamadas.
+4. **Anota el contador DESPUÉS** y **comprueba que el delta es exactamente el que esperabas**
+   (1.650 por vídeo subido). **Si no cuadra, otra sesión escribió encima: párate y avísale a Diego.**
+   Ese descuadre es la firma de la actualización perdida, y es la única forma de detectarla.
+5. Devuelve el turno diciéndolo explícitamente en tu informe final.
+
+El arreglo de verdad —un lock atómico sobre el contador— **NO lo hagas ahora**: `QuotaMeter` vive en
+`modules/competitor_scout.py`, que es **propiedad del track C**, y tocarlo desde aquí es justo la
+colisión que este bloque existe para evitar. Regístralo en el ledger como deuda y sigue.
 
 ## Qué está YA hecho (no lo rehagas)
 
