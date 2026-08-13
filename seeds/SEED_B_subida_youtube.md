@@ -18,8 +18,10 @@ marcado `# [track B]`).
 
 ## 🔴 EXCLUSIÓN MUTUA CON EL TRACK C — léelo antes de la primera llamada
 
-**El track C (`SEED_C_competencia.md`) corre AHORA MISMO en otra sesión y comparte contigo la cuota
-de YouTube.** El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**: si los
+**Puede haber otra sesión trabajando en este mismo repo a la vez que tú: el track C
+(`SEED_C_competencia.md`).** Es el único otro track que toca la API de YouTube, y comparte contigo
+el contador de cuota. **NO asumas que está o que no está corriendo: PREGÚNTASELO A DIEGO** antes de
+tu primera llamada real. El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**: si los
 dos escribís a la vez se **pierden actualizaciones** y el corte preventivo deja de proteger — o sea,
 te comes un `403` a mitad de una subida de 1,5 GB.
 

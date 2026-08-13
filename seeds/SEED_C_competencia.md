@@ -22,8 +22,10 @@ escrito en `CLAUDE.md`).
 
 ## 🔴 EXCLUSIÓN MUTUA CON EL TRACK B — léelo antes de la primera llamada
 
-**El track B (`SEED_B_subida_youtube.md`) corre AHORA MISMO en otra sesión y comparte contigo la
-cuota de YouTube.** El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**:
+**Puede haber otra sesión trabajando en este mismo repo a la vez que tú: el track B
+(`SEED_B_subida_youtube.md`).** Es el único otro track que toca la API de YouTube, y comparte
+contigo el contador de cuota. **NO asumas que está o que no está corriendo: PREGÚNTASELO A DIEGO**
+antes de tu primera llamada real. El contador vive en **`data/competitors.json`**, que es un fichero **sin lock**:
 si los dos escribís a la vez se **pierden actualizaciones** y el corte preventivo deja de proteger.
 Para B eso significa comerse un `403` a mitad de una subida de 1,5 GB; para ti, que un escaneo se
 corte en falso o siga cuando ya no debería.
