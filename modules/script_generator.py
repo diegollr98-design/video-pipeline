@@ -105,12 +105,34 @@ def _call_openrouter(messages, config, max_tokens=None):
             last_error = f"respuesta no-JSON: {resp.text[:150]}"
             continue
 
+        # OJO: `.get("content", "")` solo devuelve "" si la clave NO existe. Si
+        # existe con valor null —que es lo que manda OpenRouter cuando el modelo
+        # de razonamiento agota el presupuesto razonando y no llega a escribir la
+        # respuesta— devuelve None, y `None.strip()` reventaba con un
+        # AttributeError que NINGÚN `except` del bucle atrapa: subía hasta
+        # main.py y mataba el vídeo entero con 1 sola petición gastada.
+        # Medido: 200 OK, `content: null`, el texto en `reasoning` y
+        # `finish_reason: "length"`. La línea llevaba así desde el commit inicial;
+        # es el camino que nadie ejercía (§19).
         choices = data.get("choices") or []
-        content = choices[0].get("message", {}).get("content", "").strip() if choices else ""
+        mensaje = (choices[0].get("message") if choices else None) or {}
+        content = (mensaje.get("content") or "").strip()
         if content:
             return content
 
-        last_error = f"200 sin contenido: {json.dumps(data, ensure_ascii=False)[:200]}"
+        # Ruidoso y distinguible (§13): "no escribió nada porque se le acabó el
+        # presupuesto razonando" no es lo mismo que "devolvió un cuerpo de error".
+        razonamiento = mensaje.get("reasoning") or ""
+        fin = choices[0].get("finish_reason") if choices else None
+        if razonamiento and fin == "length":
+            last_error = (
+                f"200 sin contenido: el modelo gastó el presupuesto razonando "
+                f"({len(razonamiento)} chars de reasoning, finish_reason={fin}). "
+                f"Un reintento idéntico tiene poca probabilidad de arreglarlo: si "
+                f"esto se repite, sube `max_tokens` en esta llamada")
+        else:
+            last_error = (f"200 sin contenido (finish_reason={fin}): "
+                          f"{json.dumps(data, ensure_ascii=False)[:200]}")
 
     raise RuntimeError(
         f"OpenRouter falló tras {max_retries} intentos con el modelo '{model}' — {last_error}"

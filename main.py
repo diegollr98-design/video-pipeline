@@ -475,7 +475,13 @@ def main():
 
                 video_num += 1
         except Exception as e:
-            logger.error(f"Error produciendo video {video_num}: {e}")
+            # `exc_info=True` NO es cosmético: sin la traza, un
+            # "'NoneType' object has no attribute 'strip'" no dice en qué línea
+            # murió, y averiguarlo costó una investigación entera con repro
+            # monkeypatcheado. Es la misma clase que registrar los primeros 500
+            # caracteres de stderr de FFmpeg (que son el banner de compilación)
+            # y diagnosticar a ciegas.
+            logger.error(f"Error produciendo video {video_num}: {e}", exc_info=True)
         finally:
             # Cleanup chunk
             if os.path.exists(chunk_path):
