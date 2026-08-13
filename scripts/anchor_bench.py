@@ -66,6 +66,39 @@ CORRIDAS = {
         "raw": "raw_11ago.json", "sents": "sents_11ago.json",
         "trans": "whisper_v001_11ago.json", "ass": "video_001_subs_11ago.ass",
         "control": "13aec78", "zonas": "ZONAS_11AGO",
+        # El audio de esta corrida SÍ se conservó, así que sus dos ventanas de
+        # reparto ejercen el fix de [ANCLA-06] de verdad en vez de medirse a
+        # ciegas. El del 10-ago NO existe: esa corrida queda declarada NO
+        # evaluable para este fix, y se dice, en vez de dar un verde trivial.
+        "audio": "audio_11ago.mp3",
+    },
+    # Tercer corpus (13-ago-2026): fixture corto de `/eval` (test_e2e, 209s), no
+    # produccion a escala. Existe por su ÚNICA ventana rota (t=110.14s, 57
+    # palabras, "ancla descartada" + "aplastada" a la vez), que es la que se usó
+    # para diagnosticar [ANCLA-06]: el reparto por caracteres degenera en
+    # `util = s_dur` cuando la ventana colapsada (span<=0.05) no dispara ni
+    # `aplastada` ni `fabricada` (las dos exigen span>0.05). Es el ÚNICO de los
+    # tres corpus con el AUDIO conservado (los otros dos no lo tienen), porque el
+    # fix de ANCLA-06 reparte sobre tramos de voz medidos con `silencedetect` y
+    # eso exige el audio real, no solo texto.
+    #
+    # `control` = commit REAL que compuso el `.ass`, localizado cruzando la hora
+    # del `pipeline.log` (video_004: 13:22:58-13:25:29) contra `git log` de
+    # `modules/tts_engine.py`: `27f025e` (13:18:51) es el último commit ANTES de
+    # esa ventana; el siguiente, `d1496a8` (13:55:29, cambia PALABRAS_FRASE_MAX
+    # 40->30), es POSTERIOR. Con `27f025e` el control da 0,0027s/0,0100s.
+    #
+    # ⚠️ NO es que `d1496a8` "haga desaparecer la ventana de 57 palabras":
+    # verificado cargando los DOS commits con `git show`, ambos dan la misma
+    # frase de 57 (con el bug de `titulo_en_curso` presente la frase estaba
+    # exenta del partidor con CUALQUIER valor de PALABRAS_FRASE_MAX, 12/20/30/40).
+    # Ese "43+14" salió de importar el módulo EN CALIENTE mientras el working
+    # tree ya tenía el fix de `titulo_en_curso` aplicado. Al reconstruir un
+    # corpus histórico, carga el código con `git show`, nunca `import` a secas.
+    "v004": {
+        "raw": "raw_words_v004.json", "sents": "sents_v004.json",
+        "trans": "whisper_v004.json", "ass": "video_004_subs.ass",
+        "control": "27f025e", "zonas": "ZONAS_V004", "audio": "video_004_audio.mp3",
     },
 }
 
@@ -96,6 +129,19 @@ ZONAS_11AGO = [
     (300, 340, "control", "sana"),
     (605, 645, "control", "sana"),
     (1245, 1285, "control", "sana"),
+]
+
+# Verdicts del corpus v004, medidos contra `whisper_v004.json` (referi
+# independiente, faster-whisper small, vad_filter=False, sobre el AUDIO
+# publicado) con el código real de producción (`27f025e`) aplicado a
+# `raw_words_v004` + `sents_v004`: 17 de 18 ventanas sanas, 1 rota — la de
+# 57 palabras en t=110,14s (mediana +0,460s, 16,0s de video afectados). Es la
+# ÚNICA ventana rota de todo el corpus; no hay otra con la que contrastar salvo
+# zonas control.
+ZONAS_V004 = [
+    (20, 60, "control", "sana"),
+    (95, 130, "ventana de 57 palabras (ancla descartada + aplastada) [ANCLA-06]", "rota"),
+    (150, 190, "control", "sana"),
 ]
 
 
@@ -324,9 +370,27 @@ def bench(corrida=None):
         print("  !! CONTROL FALLIDO: el banco NO reproduce la corrida publicada. "
               "No juzgues nada con estos numeros.")
 
-    from modules.tts_engine import _validate_and_fix_alignment, _enforce_monotonic
+    from modules.tts_engine import (_validate_and_fix_alignment, _enforce_monotonic,
+                                    _tramos_de_voz)
+    # El fix de [ANCLA-06] reparte sobre los tramos de voz MEDIDOS, así que sin el
+    # audio la rama nueva no se ejerce y el banco daría verde sin haber probado
+    # nada. Eso es exactamente el fallback mudo que este banco existe para cazar,
+    # así que aquí se dice a gritos en vez de dejarlo pasar.
+    tramos = None
+    if cfg.get("audio"):
+        ruta_audio = os.path.join(SCRATCH, cfg["audio"])
+        if os.path.exists(ruta_audio):
+            tramos = _tramos_de_voz(ruta_audio)
+            print(f"tramos de voz medidos sobre {cfg['audio']}: {len(tramos)}")
+        else:
+            print(f"  !! FALTA EL AUDIO {ruta_audio}: la rama de reparto sobre voz "
+                  f"NO se ejerce en esta corrida")
+    else:
+        print("  !! esta corrida NO tiene audio: las ventanas que caigan en la rama "
+              "de reparto se miden A CIEGAS, no evaluan el fix de ANCLA-06")
     nuevo = _enforce_monotonic(
-        _validate_and_fix_alignment([dict(w) for w in raw], sentences))
+        _validate_and_fix_alignment([dict(w) for w in raw], sentences,
+                                    tramos_voz=tramos))
 
     zonas = globals()[cfg["zonas"]]
     malas_v = _informe(f"ANTES ({etiqueta})", referencia, sentences, trans, zonas, calibrar=True)

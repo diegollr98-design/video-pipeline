@@ -278,11 +278,18 @@ def _ensure_breathing_periods(text, cada=PALABRAS_FRASE_MAX):
     de silencio en mitad de la intro.
     """
     resultado = []
+    # FUERA del bucle a propósito: el título es la primera frase del TEXTO, no la
+    # de cada párrafo. Estando dentro, la exención se aplicaba a la primera frase
+    # de CADA párrafo y esas frases no se partían con NINGÚN valor de `cada`
+    # (medido: la de 57 palabras de `video_004` salía igual con 12, 20, 30 y 40, y
+    # es la que se convirtió en la ventana aplastada de [ANCLA-06]). Además dejaba
+    # `ANCLA_WPM_TIPICO` fuera de su régimen: el tope crece con n y el silencio de
+    # la ventana no, así que en las ventanas largas no mordía nunca.
+    titulo_en_curso = True
     for parrafo in text.split("\n"):
         palabras = parrafo.split()
         salida = []
         desde_punto = 0
-        titulo_en_curso = True  # la 1.ª frase es el título: no se toca
         for palabra in palabras:
             limpia = re.sub(r"[^a-záéíóúüñ]", "", palabra.lower())
             if (salida and not titulo_en_curso and desde_punto >= cada
@@ -617,7 +624,38 @@ def _tramos_de_voz(audio_path, umbral_db=-35, dur_min=0.25):
     return tramos
 
 
-def _extend_sentence_final_words(words, audio_path):
+def _voz_en_ventana(tramos, ini, fin):
+    """Los tramos de voz que caen dentro de [ini, fin], recortados a la ventana.
+
+    Devuelve [] si no hay voz medible ahí: el que llama TIENE que tratar ese caso
+    en voz alta, nunca inventando (§13).
+    """
+    segs = []
+    for a, b in tramos or []:
+        a2, b2 = max(a, ini), min(b, fin)
+        if b2 - a2 > 0.01:
+            segs.append((a2, b2))
+    return segs
+
+
+def _reloj_de_voz(offset, segs):
+    """Convierte un instante del 'reloj de voz' (silencios colapsados) a tiempo real.
+
+    Repartir por caracteres sobre la ventana entera aplana los silencios INTERNOS:
+    medido en la ventana t=110,13 de `video_004`, 1,196 s repartidos en 3 pausas que
+    el reparto lineal se comía, y el error salía en diente de sierra reiniciándose
+    en cada pausa (+0,65 -> +0,04 -> +0,75 -> +0,30 -> ...). Caminando por el reloj
+    de voz, las pausas dejan de consumir presupuesto de palabras.
+    """
+    for a, b in segs:
+        d = b - a
+        if offset <= d:
+            return a + offset
+        offset -= d
+    return segs[-1][1] if segs else 0.0
+
+
+def _extend_sentence_final_words(words, audio_path, tramos=None):
     """Alarga el cue de la última palabra de cada frase MIENTRAS siga sonando.
 
     Medido con `/eval` el 12-ago-2026, después de meter `_ensure_breathing_periods`:
@@ -637,13 +675,17 @@ def _extend_sentence_final_words(words, audio_path):
     """
     if not words:
         return words
-    try:
-        tramos = _tramos_de_voz(audio_path)
-    except Exception as e:
-        # Sin el instrumento no se inventa nada: se deja la alineación como está
-        # y se dice en voz alta (§13), en vez de estirar a ciegas.
-        logger.warning(f"No se pudieron medir los tramos de voz ({e}); "
-                       f"los cues de fin de frase se dejan sin alargar")
+    if tramos is None:
+        try:
+            tramos = _tramos_de_voz(audio_path)
+        except Exception as e:
+            # Sin el instrumento no se inventa nada: se deja la alineación como está
+            # y se dice en voz alta (§13), en vez de estirar a ciegas.
+            logger.warning(f"No se pudieron medir los tramos de voz ({e}); "
+                           f"los cues de fin de frase se dejan sin alargar")
+            return words
+    if not tramos:
+        logger.warning("Sin tramos de voz: los cues de fin de frase se dejan sin alargar")
         return words
 
     alargadas = 0
@@ -705,7 +747,7 @@ def _enforce_monotonic(words):
     return words
 
 
-def _validate_and_fix_alignment(words, sentences):
+def _validate_and_fix_alignment(words, sentences, tramos_voz=None):
     """Hard anchors: use edge-tts SentenceBoundary as exact time anchors.
 
     edge-tts SentenceBoundary gives us the EXACT start/duration of each sentence
@@ -779,6 +821,8 @@ def _validate_and_fix_alignment(words, sentences):
 
     anchored = 0
     rescaled = 0
+    repartidas_voz = 0
+    repartidas_ciegas = 0
 
     for pos, v in enumerate(ventanas):
         s_start = v["s_start"]
@@ -929,25 +973,73 @@ def _validate_and_fix_alignment(words, sentences):
             # un instante): ahí sí toca el reparto proporcional por caracteres.
             char_lens = [max(len(words[i]["text"]), 1) for i in indices]
             total_chars = sum(char_lens)
-            cursor = s_start
-            # Sobre la duración de la VOZ, no sobre la ventana entera: la
-            # ventana de edge-tts incluye el silencio posterior, y repartir
-            # sobre ella empuja cada palabra por detrás de cuando suena.
-            util = min(s_dur, len(indices) / ANCLA_WPM_TIPICO * 60) if ritmo_inservible else s_dur
-            for j, idx in enumerate(indices):
-                w_dur = util * char_lens[j] / total_chars
-                words[idx]["start"] = cursor
-                words[idx]["end"] = cursor + w_dur
-                cursor += w_dur
+            segs = _voz_en_ventana(tramos_voz, s_start, s_end)
+            voz_util = sum(b - a for a, b in segs)
+
+            if voz_util > 0.05:
+                # REPARTO SOBRE LOS TRAMOS DE VOZ MEDIDOS [ANCLA-06].
+                # El `min(s_dur, n/210*60)` de antes NO limitaba nunca en las
+                # ventanas largas —que son las que más daño hacen—, porque el tope
+                # crece linealmente con n y el silencio de la ventana no: para
+                # n=57 hacían falta 1,42 s de silencio y solo había 1,13, así que
+                # `util` degeneraba en `s_dur`, la ventana ENTERA de edge-tts.
+                # Medido en `video_004` (t=110,13, 57 palabras) contra
+                # transcripción independiente: mediana +0,460 y 21 palabras a más
+                # de 0,5 s POR DETRÁS de la voz, las 21 de toda la corrida.
+                # Y no bastaba con elegir mejor el escalar: el error era un diente
+                # de sierra que se reiniciaba en cada pausa interna, así que la
+                # otra mitad venía de aplanar los silencios de DENTRO.
+                for j, idx in enumerate(indices):
+                    ini_voz = voz_util * sum(char_lens[:j]) / total_chars
+                    fin_voz = voz_util * sum(char_lens[:j + 1]) / total_chars
+                    t_ini = _reloj_de_voz(ini_voz, segs)
+                    t_fin = _reloj_de_voz(fin_voz, segs)
+                    # El cue no cruza un silencio: se corta al final del tramo en
+                    # el que empieza. Es la especificación de siempre (el
+                    # subtítulo desaparece en las pausas), y aquí además evita
+                    # dejarlo en pantalla mientras no suena nada.
+                    for a, b in segs:
+                        if a <= t_ini <= b:
+                            t_fin = min(t_fin, b)
+                            break
+                    words[idx]["start"] = t_ini
+                    words[idx]["end"] = max(t_ini + 0.02, t_fin)
+                repartidas_voz += 1
+            else:
+                # Sin medida de voz NO se inventa: se conserva el comportamiento
+                # viejo y se dice en voz alta (§13). Un fallback mudo aquí daría
+                # verde en el banco sin haber ejercido nada.
+                logger.warning(
+                    f"Ventana en t={s_start:.2f}s repartida SIN medida de voz "
+                    f"({len(indices)} palabras): "
+                    + ("no hay tramos de voz en la ventana"
+                       if tramos_voz else "no se pasó el audio")
+                    + ". Reparto sobre la ventana entera, silencio incluido."
+                )
+                cursor = s_start
+                util = min(s_dur, len(indices) / ANCLA_WPM_TIPICO * 60) \
+                    if ritmo_inservible else s_dur
+                for j, idx in enumerate(indices):
+                    w_dur = util * char_lens[j] / total_chars
+                    words[idx]["start"] = cursor
+                    words[idx]["end"] = cursor + w_dur
+                    cursor += w_dur
+                repartidas_ciegas += 1
 
         anchored += 1
 
     logger.info(
         f"Anclas duras: {anchored}/{len(sentences)} frases ancladas a SentenceBoundary "
         f"({rescaled} reescaladas sobre el ritmo de Whisper, "
-        f"{anchored - rescaled} repartidas por caracteres, "
+        f"{repartidas_voz} repartidas sobre los tramos de voz medidos, "
+        f"{repartidas_ciegas} repartidas A CIEGAS sobre la ventana entera, "
         f"{corregidas} anclas corruptas sustituidas por la mediana del vecindario)"
     )
+    if repartidas_ciegas:
+        logger.warning(
+            f"{repartidas_ciegas} ventana(s) repartidas sin medida de voz: esos "
+            f"subtitulos pueden ir por detras de la voz [ANCLA-06]"
+        )
     return words
 
 
@@ -972,11 +1064,20 @@ def run_tts(text, audio_path, vtt_path, config):
     words = _forced_align(audio_path, clean_text, whisper_model)
     logger.info(f"Alineadas {len(words)} palabras (texto original: {len(clean_text.split())})")
 
+    # UNA sola medida de voz, compartida por el anclaje y por la extensión de los
+    # cues finales: `silencedetect` sobre 30 min no es gratis y las dos la quieren.
+    try:
+        tramos = _tramos_de_voz(audio_path)
+    except Exception as e:
+        logger.warning(f"No se pudieron medir los tramos de voz ({e}): el anclaje "
+                       f"repartira a ciegas si alguna ventana lo necesita")
+        tramos = None
+
     # Validate per-sentence: fix clustered words using sentence anchors
-    words = _validate_and_fix_alignment(words, sentences)
+    words = _validate_and_fix_alignment(words, sentences, tramos_voz=tramos)
     # Va DESPUÉS del anclaje (que mueve ventanas enteras) y ANTES de la guarda de
     # monotonía, que es la que corta cualquier solape que esto pudiera crear.
-    words = _extend_sentence_final_words(words, audio_path)
+    words = _extend_sentence_final_words(words, audio_path, tramos=tramos)
     words = _enforce_monotonic(words)
 
     # Build SRT
