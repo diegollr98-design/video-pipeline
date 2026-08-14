@@ -39,6 +39,20 @@ SHORT_SUB_CONFIG = {
 }
 
 WOOSH_PATH = "./assets/stereogenicstudio-swish-swoosh-woosh-sfx-27-357164.mp3"
+# Mismo valor medido que video_composer.py:12 (mismo fichero de audio) — el
+# instante donde cae el pico del woosh dentro del propio mp3.
+WOOSH_PEAK = 0.483
+# Mismo valor que el `settle_time` local de `_compose_short` (tiempo hasta que
+# la tarjeta de título llega al centro). Un solo sitio para que no diverjan.
+SETTLE_TIME = 0.25
+
+# Mínimo de palabras que un short tiene que conservar DESPUÉS de
+# `_strip_trailing_metadata` y del truncado a 280 palabras. Es el mismo umbral
+# que `_validar_salida` exige al generarlo (`min_palabras_speech=80` más
+# abajo); sin re-comprobarlo tras esas dos operaciones, un recorte agresivo
+# puede dejar el speech en ~47 palabras (~15s de narración: la clase "short de
+# 4,5 segundos" de CLAUDE.md) sin que nada lo detecte.
+_MIN_PALABRAS_SPEECH_SHORT = 80
 
 
 def _build_avoid_block(avoid):
@@ -160,7 +174,7 @@ def _generate_short_story(style, config, avoid=None):
         title, speech = _parse_title_and_speech(raw)
         ok, motivo = _validar_salida(title, speech, min_palabras_titulo=8,
                                      exigir_puntuacion=True,
-                                     min_palabras_speech=80)
+                                     min_palabras_speech=_MIN_PALABRAS_SPEECH_SHORT)
         # La apertura se PIDE en el prompt y se IMPONE aquí. Pedirla no basta:
         # es la cuarta vez en este repo que una garantía en prosa no se cumple
         # (comas, título, variedad de shorts). El último intento se acepta igual
@@ -212,6 +226,28 @@ def _generate_short_story(style, config, avoid=None):
         last_period = max(text.rfind("."), text.rfind("!"), text.rfind("?"))
         if last_period > 0:
             speech = text[:last_period + 1]
+        else:
+            # Sin NINGÚN '.'/'!'/'?' en las primeras 280 palabras, el `if` de
+            # arriba nunca entraba y el speech se quedaba ENTERO sin truncar
+            # (no-op mudo: nada avisaba de que el "truncado" no truncó nada).
+            # Corta igualmente, por palabras, y que quede constancia ruidosa.
+            logger.warning(
+                f"Short: sin punto/exclamación/interrogación en las primeras "
+                f"280 palabras ({len(words)} en total); el truncado por FRASE "
+                f"no puede aplicarse. Truncando por PALABRAS en su lugar."
+            )
+            speech = text
+
+    # Re-validar DESPUÉS de `_strip_trailing_metadata` y del truncado: los dos
+    # pueden dejar el speech por debajo del mínimo que se exigió al generarlo
+    # sin que nada lo vuelva a comprobar (§13: nunca fallback silencioso).
+    speech_wc = len(speech.split())
+    if speech_wc < _MIN_PALABRAS_SPEECH_SHORT:
+        raise RuntimeError(
+            f"Short inutilizable tras limpiar metadatos/truncar: {speech_wc} "
+            f"palabras de speech (minimo {_MIN_PALABRAS_SPEECH_SHORT}). "
+            f"Titulo: {title!r}"
+        )
 
     return title, speech
 
@@ -232,11 +268,27 @@ def _crop_to_vertical(input_path, output_path):
         raise RuntimeError(f"Crop failed: {result.stderr[-300:]}")
 
 
-def _premix_woosh_short(audio_path, output_path):
-    """Mix woosh into short audio."""
+def _premix_woosh_short(audio_path, output_path, settle_time=SETTLE_TIME):
+    """Mix woosh into short audio, sincronizado con la llegada de la tarjeta al centro.
+
+    Gemelo de `video_composer._premix_woosh` (video_composer.py:15). Hasta
+    ahora el offset SIEMPRE era 0 (`adelay=0|0`), así que el pico del woosh
+    (WOOSH_PEAK) sonaba en t=0 del audio en vez de cuando la tarjeta de título
+    llega al centro (t=settle_time). El gemelo largo sí lo calcula
+    (`woosh_offset = max(0, settle_time - WOOSH_PEAK)`, video_composer.py:84).
+    """
     ffmpeg = _find_exe("ffmpeg")
     if not os.path.isfile(WOOSH_PATH):
+        # §13: nada de fallback mudo. Antes esto devolvía el audio sin woosh
+        # sin dejar ningún rastro — el short salía sin sonido de intro y nadie
+        # se enteraba.
+        logger.warning(
+            f"Woosh no encontrado en {WOOSH_PATH!r}: el short se compone SIN "
+            f"sonido de intro."
+        )
         return audio_path
+
+    woosh_offset = max(0, settle_time - WOOSH_PEAK)
 
     cmd = [
         ffmpeg,
@@ -245,7 +297,7 @@ def _premix_woosh_short(audio_path, output_path):
         "-filter_complex",
         (
             "[0:a]aformat=sample_fmts=fltp:sample_rates=24000:channel_layouts=mono[tts];"
-            "[1:a]adelay=0|0,volume=0.4,"
+            f"[1:a]adelay={int(woosh_offset * 1000)}|{int(woosh_offset * 1000)},volume=0.4,"
             "aformat=sample_fmts=fltp:sample_rates=24000:channel_layouts=mono,"
             "apad[woosh];"
             "[tts][woosh]amix=inputs=2:duration=first:normalize=0[out]"
@@ -277,7 +329,7 @@ def _compose_short(gameplay_path, audio_path, ass_path, output_path,
               "-itsoffset", "-0.10", "-i", audio_path]
 
     if title_card_path and os.path.isfile(title_card_path):
-        settle_time = 0.25
+        settle_time = SETTLE_TIME
         bounce_decay = 12
         bounce_freq = 18
         fade_start = max(title_end_time - 0.3, 2.0) if title_end_time > 0 else 4.0
@@ -362,6 +414,52 @@ def _compose_short(gameplay_path, audio_path, ass_path, output_path,
     logger.info(f"Short generado: {output_path} ({size_mb:.1f} MB)")
 
 
+def _compute_title_end(title, words, short_num=None):
+    """Instante en el que termina la frase del titulo dentro del audio narrado.
+
+    NOTA sobre el regex de limpieza: este incluye \u2026 (puntos suspensivos
+    tipograficos) y el del gemelo largo (main.py:275) NO. Es divergencia real
+    entre gemelos (regla 11 de decision-making.md): el mismo titulo da un
+    `title_wc` distinto en cada rama. Se documenta aqui para propagarlo en otra
+    sesion (no se toca main.py desde este cambio). Criterio para decidir cual
+    version es la correcta: `title_wc` tiene que contar lo mismo que cuentan
+    las palabras ALINEADAS por el TTS, y edge-tts no pronuncia un "\u2026" como
+    palabra propia -- asi que la version que lo QUITA (esta, la de shorts) es
+    la que no se desincroniza si el titulo trae una elipsis suelta como token
+    independiente.
+
+    [SHORT-GUARD-01] Antes: `words[min(title_wc - 1, len(words) - 1)]`. Con
+    `title_wc == 0` (titulo que limpia a SOLO puntuacion -- la clase [BASURA]
+    ya vista en este repo para el titulo largo), `min(-1, ...)` da **-1**, que
+    en Python indexa la ULTIMA palabra alineada: title_end pasaba a ser el FIN
+    DE TODA LA NARRACION y `vtt_to_ass(skip_until=title_end)` tiraba TODOS los
+    subtitulos del short, sin ningun error. El gemelo largo SI se abstiene en
+    este caso (main.py:278: `title_word_count > 0 and title_word_count <
+    len(aligned_words)`) -- aqui faltaba la guardia equivalente.
+    """
+    title_clean = re.sub(r'[.!?,;:\-\"\'\u2026]', '', title.lower()).split()
+    title_wc = len(title_clean)
+
+    if words and 0 < title_wc < len(words):
+        return words[title_wc - 1]["end"]
+    if not words:
+        return 4.0
+
+    # title_wc <= 0 (titulo vacio tras limpiar) o title_wc >= len(words) (el
+    # "titulo" consumiria la narracion entera): ninguno de los dos es
+    # localizable de forma fiable. Comportamiento SEGURO, igual que el gemelo
+    # largo: no suprimir subtitulos (title_end=0.0 -> skip_until=0 en
+    # vtt_to_ass) en vez de indexar fuera de rango. Y RUIDOSO (regla 13): el
+    # bug real fue que esto pasaba sin dejar rastro.
+    logger.warning(
+        f"Short #{short_num}: no se pudo localizar el fin del titulo en las "
+        f"palabras alineadas (title_wc={title_wc} tras limpiar {title!r}, "
+        f"{len(words)} palabras alineadas). Usando title_end=0.0 (los "
+        f"subtitulos NO se suprimen) en vez de indexar fuera de rango."
+    )
+    return 0.0
+
+
 def generate_short(gameplay_path, short_num, config, style="dramatic", speed=1.5, offset=0,
                    avoid=None):
     """Generate one complete YouTube Short / TikTok.
@@ -428,10 +526,7 @@ def generate_short(gameplay_path, short_num, config, style="dramatic", speed=1.5
         f.write(srt_content)
     logger.info(f"SRT: {len(words)} palabras (timestamps escalados x{speed})")
 
-    # Calculate title end
-    title_clean = re.sub(r'[.!?,;:\-\"\'\u2026]', '', title.lower()).split()
-    title_wc = len(title_clean)
-    title_end = words[min(title_wc - 1, len(words) - 1)]["end"] if words else 4.0
+    title_end = _compute_title_end(title, words, short_num)
 
     ass_path = os.path.join(temp_dir, f"{stem}_subs.ass")
     short_config = {**config, "subtitles": SHORT_SUB_CONFIG}
@@ -446,7 +541,7 @@ def generate_short(gameplay_path, short_num, config, style="dramatic", speed=1.5
 
     # 6. Pre-mix woosh
     mixed_audio = os.path.join(temp_dir, f"{stem}_audio_mixed.mp3")
-    final_audio = _premix_woosh_short(audio_path, mixed_audio)
+    final_audio = _premix_woosh_short(audio_path, mixed_audio, settle_time=SETTLE_TIME)
 
     # 7. Compose short
     output_path = os.path.join(output_dir, f"{stem}.mp4")

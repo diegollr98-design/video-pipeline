@@ -23,6 +23,10 @@ WORDS_PER_BLOCK = 2000  # Each API call generates ~2000 words reliably
 # Es §17 en estado puro: no había ningún `if` que forzara el cierre.
 _CIERRE_PALABRAS = 500       # tamaño que se pide para el bloque de desenlace
 _CIERRE_MIN_PALABRAS = 120   # por debajo de esto no es un desenlace, es un resto
+# Un metadato de cola son decenas de palabras. Si el recorte se lleva más que
+# esto de la historia YA CONCATENADA, no está quitando una anotación: está
+# borrando narración (ver `_limpiar_bloque`).
+_META_CORTE_MAX_FRAC = 0.15
 _CIERRE_PRESERVADO = 600     # palabras finales que el truncado NUNCA descarta
 
 
@@ -697,8 +701,6 @@ def _ensure_title_at_start(title, story):
     1. Remove any partial overlap at the start of the speech
     2. Prepend the full title
     """
-    import re as _re
-
     # Clean title
     title_clean = title.rstrip('.').rstrip()
     while title_clean.endswith('.'):
@@ -976,6 +978,31 @@ def _strip_duplicated_opening(story, continuation):
     return " ".join(cont_words[best_end:]).strip(), best_end
 
 
+def _limpiar_bloque(texto, etiqueta):
+    """Quita la auto-anotación del modelo de UN bloque, no de la historia entera.
+
+    `_strip_trailing_metadata` corta desde el marcador MÁS TEMPRANO hasta el
+    FINAL de la cadena (`_detectar_meta_cola` devuelve `min(posiciones)`). Eso es
+    correcto sobre un bloque —ahí el metadato SÍ está en la cola, que es como se
+    midió [BASURA-03]— y destructivo sobre la concatenación de 3-6 bloques, que
+    es donde `generate_story` lo llamaba: el marcador del bloque 1 se lleva por
+    delante todos los bloques siguientes.
+
+    Medido sobre el guion real `data/evidence/video_001_story.txt` (5307
+    palabras) con el marcador literal de `video_004` pegado al final del bloque
+    1: 5307 -> 1300 palabras, **4007 borradas (76%)**, desenlace incluido. El
+    único aviso era un `logger.warning` con la historia entera dentro (§12), y
+    el vídeo salía "terminado".
+    """
+    limpio, meta = _strip_trailing_metadata(texto)
+    if meta:
+        borradas = len(texto.split()) - len(limpio.split())
+        logger.warning(
+            f"{etiqueta}: quitado metadato del modelo ({borradas} palabras): {meta!r}"
+        )
+    return limpio
+
+
 def generate_story(target_words, style, config):
     """Generate a complete story in blocks, concatenating until target_words is reached."""
 
@@ -985,6 +1012,10 @@ def generate_story(target_words, style, config):
     # Block 1: Title + hook + context
     logger.info(f"Bloque 1/{num_blocks}: generando titulo + inicio...")
     title, story = _generate_first_block(target_words, style, config)
+
+    # La limpieza del metadato va POR BLOQUE (ver `_limpiar_bloque`): sobre la
+    # concatenación se lleva por delante todo lo que venga detrás del marcador.
+    story = _limpiar_bloque(story, "Bloque 1")
 
     # FORCE: ensure speech starts with the full title sentence
     story = _ensure_title_at_start(title, story)
@@ -1007,6 +1038,7 @@ def generate_story(target_words, style, config):
             title, story, target_words, words_remaining, is_final, config
         )
 
+        continuation = _limpiar_bloque(continuation, f"Bloque {block}")
         continuation, recortadas = _strip_duplicated_opening(story, continuation.strip())
         if recortadas and len(continuation.split()) < 20:
             logger.warning(
@@ -1041,6 +1073,9 @@ def generate_story(target_words, style, config):
         cierre = _generate_continuation(
             title, story, word_count + _CIERRE_PALABRAS, _CIERRE_PALABRAS, True, config
         )
+        # ANTES del mínimo de palabras: un cierre que es casi todo auto-anotación
+        # tiene que caer por el guardia de abajo (abortar) en vez de colarse.
+        cierre = _limpiar_bloque(cierre, "Bloque de cierre")
         cierre, _ = _strip_duplicated_opening(story, cierre.strip())
 
         if len(cierre.split()) < _CIERRE_MIN_PALABRAS:
@@ -1059,8 +1094,23 @@ def generate_story(target_words, style, config):
     # El modelo se anota a sí mismo al final ("PALABRAS: 1558") y eso se NARRA.
     # Va ANTES del truncado: si no, el metadato cuenta como palabras del objetivo
     # y además el truncado conserva justo la cola, que es donde vive.
+    # BACKSTOP: en el camino normal ya no dispara (cada bloque se limpió al
+    # nacer). Si llega aquí es una forma nueva, y sobre la concatenación este
+    # corte llega hasta el FINAL de la cadena: puede estar borrando la historia
+    # entera en vez de una anotación. Con dientes (§12): aborta, no avisa.
+    antes_meta = len(story.split())
     story, meta = _strip_trailing_metadata(story)
     if meta:
+        borradas = antes_meta - len(story.split())
+        if borradas > antes_meta * _META_CORTE_MAX_FRAC:
+            raise RuntimeError(
+                f"Limpieza de metadato sobre el guion completo: el corte se lleva "
+                f"{borradas} de {antes_meta} palabras "
+                f"({borradas / antes_meta:.0%}, máximo {_META_CORTE_MAX_FRAC:.0%}). "
+                f"Eso no es una auto-anotación de cola, es narración — probablemente "
+                f"el desenlace. Se aborta el vídeo en vez de publicarlo a medias. "
+                f"Motivo: {meta!r}"
+            )
         # Ruidoso a propósito (§13): esto llegó a subtitularse en el fixture.
         logger.warning(f"Quitado metadato del modelo al final del guion: {meta!r}")
         word_count = len(story.split())

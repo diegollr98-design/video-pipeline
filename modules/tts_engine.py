@@ -46,6 +46,16 @@ def _detect_gender(text):
     return "female" if f > m else "male"
 
 
+def _cuenta_palabras_reales(t):
+    """Palabras que LLEVAN letra o dígito. Un '—' o un '***' suelto no cuenta.
+
+    Se cuenta así, y no con `len(t.split())`, para que la guarda de
+    `_clean_speech_for_tts` no salte por un token de solo puntuación que la
+    limpieza elimina legítimamente.
+    """
+    return sum(1 for w in t.split() if re.search(r'\w', w, re.UNICODE))
+
+
 def _clean_speech_for_tts(text):
     """Clean text for natural TTS narration.
 
@@ -54,8 +64,11 @@ def _clean_speech_for_tts(text):
     - Preserve paragraph breaks (double newline) for natural pauses
     - Fix punctuation issues that cause unnatural pauses
     """
+    original = text
     lines = text.split("\n")
     cleaned = []
+    palabras_saltadas = 0   # las que se quitan A PROPÓSITO (cabeceras, título)
+    hay_contenido = False   # ¿ya salió alguna línea de narración?
 
     for line in lines:
         stripped = line.strip()
@@ -67,13 +80,24 @@ def _clean_speech_for_tts(text):
 
         # Skip block headers
         if re.match(r'^(BLOQUE|PARTE|SECCION|CONTINUACION|TITULO)\s*\d*', stripped, re.IGNORECASE):
+            palabras_saltadas += _cuenta_palabras_reales(stripped)
             continue
 
-        # Skip story titles
-        if re.match(r'^(Mi |Fui |Rechace |Hui |Compre |Regrese )', stripped) and len(stripped) < 200 and '...' in stripped:
+        # Skip story titles — SOLO en la cabecera, antes de que empiece la
+        # narración. Sin `not hay_contenido` esto se aplicaba a TODAS las líneas
+        # y se comía párrafos del cuerpo: cualquiera que empiece por "Mi ",
+        # mida <200 caracteres y lleve "..." desaparecía de la narración. Medido:
+        # 3 párrafos / 41 palabras -> 2 / 24, y como los subtítulos se generan
+        # del MISMO texto ya mutilado, audio y subtítulos quedan coherentes
+        # entre sí: ninguna métrica de sincronismo puede verlo.
+        if (not hay_contenido
+                and re.match(r'^(Mi |Fui |Rechace |Hui |Compre |Regrese )', stripped)
+                and len(stripped) < 200 and '...' in stripped):
+            palabras_saltadas += _cuenta_palabras_reales(stripped)
             continue
 
         cleaned.append(stripped)
+        hay_contenido = True
 
     # Join lines within paragraphs (single newlines become spaces)
     text = "\n".join(cleaned)
@@ -121,7 +145,12 @@ def _clean_speech_for_tts(text):
     # mitad de la idea (una coma son ~0.4s, como cualquier otra). El objetivo es
     # deshacer el dos puntos de diálogo, no partir la frase en dos.
     text = re.sub(r':\s+([A-ZÁÉÍÓÚ])', lambda m: ", " + m.group(1).lower(), text)
-    text = re.sub(r'—\s*', '', text)               # em dashes
+    # Em dash -> ESPACIO, no cadena vacía. `r'—\s*'` se llevaba también el
+    # espacio siguiente y fusionaba las dos palabras: "mi padre— era" salía
+    # "mi padreera", que se pronuncia mal Y baja el conteo de palabras (21 -> 20
+    # medido). Ese conteo es el invariante que `main.py` usa para saber cuándo
+    # acaba el título: descuadrarlo mueve el fin de la intro en silencio.
+    text = re.sub(r'\s*—\s*', ' ', text)           # em dashes
     text = re.sub(r'-\s*-', ',', text)             # double hyphens -> comma
     # Limpieza final SIN tocar los saltos de línea (los necesita el troceo).
     text = re.sub(r'[ \t]+', ' ', text)
@@ -137,6 +166,29 @@ def _clean_speech_for_tts(text):
     # comas se colocarían pensando en una frase que luego deja de existir.
     text = _ensure_breathing_periods(text)
     text = _ensure_breathing_commas(text)
+
+    # INVARIANTE CON DIENTES (§12/§17): la limpieza NO pierde narración. Lo único
+    # que puede desaparecer son las líneas que se saltan a propósito (cabeceras
+    # de bloque, el título en la cabecera) y los tokens de solo puntuación.
+    #
+    # Es el único sitio del pipeline capaz de BORRAR contenido dejando audio y
+    # subtítulos perfectamente coherentes entre sí — los dos salen de este mismo
+    # texto — así que ninguna métrica de sincronismo ni el auditor pueden verlo.
+    # Un warning no defendería (§12): esto aborta el vídeo, que es el lado barato
+    # (§16). `main.py` lo captura por vídeo y sigue con el siguiente.
+    #
+    # Calibrado sobre los 5 guiones reales en disco (16.896 palabras): delta 0 en
+    # los 5. No es un umbral inventado.
+    esperadas = _cuenta_palabras_reales(original) - palabras_saltadas
+    obtenidas = _cuenta_palabras_reales(text)
+    if obtenidas != esperadas:
+        raise RuntimeError(
+            f"La limpieza para TTS perdió narración: {esperadas} palabras "
+            f"esperadas y {obtenidas} obtenidas ({esperadas - obtenidas:+d}). "
+            f"Se aborta el vídeo: audio y subtítulos saldrían de este mismo texto "
+            f"mutilado, así que serían coherentes entre sí y el defecto sería "
+            f"invisible para todas las métricas."
+        )
 
     return text
 
