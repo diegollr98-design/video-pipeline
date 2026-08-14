@@ -14,6 +14,43 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v0.9 — 2026-08-14 — Caza de bugs: cinco borrados silenciosos y un gate que daba la nota perfecta ✅
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_D_caza_bugs.md`. El panel **tumbó
+el orden de prioridades del SEED** (sesgo del retrovisor: su clase nº1 ya estaba cerrada, la nº6 era
+terreno muerto) y, sobre todo, su **tabla de propiedad de ficheros**: 4 de los 7 bugs verificados
+vivían en ficheros que el SEED prohibía o **no asignaba a nadie** — `modules/script_generator.py`
+(1434 LOC) no aparecía en ninguna fila, y ahí estaba el peor bug de la sesión. Es el mismo mecanismo
+por el que [BASURA-03] se coló 24 h antes. Diego desbloqueó `tts_engine` + `script_generator`.
+Arreglado: **[META-01]** la limpieza de auto-anotación se aplicaba a la CONCATENACIÓN de bloques y
+cortaba hasta el final; **[LIMPIEZA-01]** `_clean_speech_for_tts` borraba párrafos del cuerpo y el em
+dash fusionaba palabras; **[GATE-04]** el auditor fallaba ABIERTO por tres caminos; y tres defectos
+del gemelo de shorts. Reportados sin tocar: **[DRYRUN-01]**, **[SHORTNUM-01]**, **[WOOSH-01]**.
+**Incidentes:** [META-01] [LIMPIEZA-01] [GATE-04] [DRYRUN-01] [SHORTNUM-01] [WOOSH-01] [SEED-02].
+**Verificación:** todo A/B offline (misma entrada, dos códigos), **0 peticiones a OpenRouter**.
+[META-01] con el guion real de 5307 palabras y el marcador de `video_004`: marcador en el bloque 1 →
+**1300 palabras (76% borrado)**, acabando a mitad de escena sin desenlace y con `_detectar_meta_cola`
+dando **limpio** después; con el fix, 3900 y desenlace intacto. [LIMPIEZA-01]: 41 → 24 palabras y
+`'padre— era'` → `'padreera'`. [GATE-04]: conjunto vacío `EXIT=0` "sin defectos MEDIBLES" → `EXIT=1`
+"no se ha auditado NADA"; instrumentos con ffmpeg caído daban **0,0 pausas por 1000 = la nota
+perfecta**. Shorts: un título solo-puntuación indexaba `-1` y tiraba **todos** los subtítulos
+(0 → 40 diálogos); un cuerpo sin puntuación daba un short de **6 palabras**. **No regresión medida en
+las cuatro superficies**: sha256 idéntico en los 5 guiones reales, 54/54 títulos de shorts idénticos,
+y en el vídeo real de 26,5 min la ÚNICA diferencia de 25 líneas de auditoría es la que se arregla.
+`pyflakes` sin `undefined name` en todo el repo.
+**Lo que esto enseña:** (a) **el peor bug estaba en el fichero que el SEED no asignó a nadie**, y la
+regla "si es de otro track, repórtalo" ya había producido ese mismo fallo el día anterior; (b) el
+SEED afirmaba que los otros tracks corrían "ahora mismo" y era **falso al arrancar** —Diego ya había
+corregido esa frase en B y C y se dejó la D— pero **se volvió cierto a media sesión**: el track C tomó
+el árbol de trabajo, así que la verificación hay que repetirla, no heredarla; (c) un informe de
+subagente atribuyó el arreglo al `else` nuevo del truncado, y el A/B demostró que ese `else` es casi
+inalcanzable: lo que salva el caso es la re-validación de longitud.
+**Pendiente:** **`/eval` + `output-audit` NO se han corrido sobre estos cambios** (el árbol lo tiene
+el track C y `main.py` sigue prohibido) — el cierre se apoya en A/B offline sobre corpus reales, que
+es lo que [GATE-03] prescribe, pero **no sustituye al gate**. Cambia la **huella del auditor**
+(`ecb603ceb50f` → `c5baf68b73c7`): todos los veredictos caducan y hay que re-auditar antes de subir.
+[DRYRUN-01] sigue VIVO y destruye gameplay: `--dry-run` consume y borra el pool. Los commits de este
+track están en `feat/competencia` (historia lineal), no en `fix/alineador`.
+
 ## v0.8 — 2026-08-13/14 — El alineador repartía sobre la ventana entera de edge-tts ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_alineador_ventana_aplastada.md`.
 La **causa raíz del SEED quedó CONFIRMADA cuatro veces** (el agente ciego llegó a la misma línea sin
