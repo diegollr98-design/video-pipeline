@@ -5,8 +5,11 @@ reventando). Aquí un LLM los debate: qué ángulo/tema/formato de título nos
 conviene atacar y por qué, con la métrica delante.
 
 La decisión NO se aplica sola: `apply_to_prompt` escribe entre marcadores en
-`prompts/reddit_story.txt` y solo se llama cuando el usuario da el OK desde el
-dashboard (o pasa --apply por CLI). `remove_from_prompt` lo revierte.
+`prompts/reddit_story.txt` Y `prompts/short_story.txt` (perfiles "largo" y
+"short" respectivamente -- son bloques DISTINTOS, no el mismo texto pegado
+dos veces) y solo se llama cuando el usuario da el OK desde el dashboard (o
+pasa --apply-trends por CLI). `remove_from_prompt` lo revierte, también en
+los dos.
 """
 
 import json
@@ -24,8 +27,13 @@ logger = logging.getLogger(__name__)
 BEGIN_MARK = "=== INICIO TENDENCIAS AUTO (no editar a mano) ==="
 END_MARK = "=== FIN TENDENCIAS AUTO ==="
 
-# Secciones que se le exigen al LLM.
-SECTIONS = ("ANALISIS", "VEREDICTO", "DIRECTRICES", "TITULARES")
+# Secciones que se le exigen al LLM. Las dos últimas son el bloque pensado para
+# SHORTS (título 10-18 palabras, sin instrucciones de duración/estructura de
+# vídeo largo) -- ver `render_injection(perfil=...)` más abajo.
+SECTIONS = (
+    "ANALISIS", "VEREDICTO", "DIRECTRICES", "TITULARES",
+    "DIRECTRICES_SHORT", "TITULARES_SHORT",
+)
 
 
 def advice_path(config):
@@ -216,7 +224,9 @@ narradas en español (estilo subforos/Reddit: dramas familiares, traiciones, jus
 
 Analizas la competencia REAL de nuestro canal con datos medidos hoy. Nuestro canal
 publica videos de {story_cfg.get('target_duration_min', 1200) // 60}-{story_cfg.get('target_duration_max', 2400) // 60} minutos
-con títulos largos (20-35 palabras) en estilo "{story_cfg.get('style', 'dramatic')}", más shorts verticales.
+con títulos largos (20-35 palabras) en estilo "{story_cfg.get('style', 'dramatic')}", más SHORTS
+verticales de ~200 palabras (40-60 segundos) con títulos cortos (10-18 palabras). Son dos
+formatos distintos y necesito directrices separadas para cada uno.
 
 === COMPETIDORES ACTIVOS ({len(competitors)}) ===
 {_format_competitor_table(competitors) or "(ninguno)"}
@@ -236,7 +246,7 @@ contrasta al menos dos opciones (por ejemplo, imitar al líder frente a explotar
 donde un canal pequeño está reventando) y quédate con una, justificando con las cifras
 de arriba. Si los datos no dan para una conclusión, dilo en vez de inventarla.
 
-Responde EXACTAMENTE con estas cuatro secciones y nada más. NO escribas tu
+Responde EXACTAMENTE con estas seis secciones y nada más. NO escribas tu
 razonamiento antes: la PRIMERA línea de tu respuesta debe ser "=== ANALISIS ===".
 
 === ANALISIS ===
@@ -250,12 +260,24 @@ que descartas. Nombra el video o canal de referencia.
 
 === DIRECTRICES ===
 De 4 a 7 instrucciones imperativas, concretas y accionables para el guionista que
-escribe nuestras historias (temas a priorizar, tipo de conflicto, qué evitar).
-Una por línea, empezando con "- ". Sin explicaciones, solo la instrucción.
+escribe nuestras historias LARGAS (20-40 minutos): temas a priorizar, tipo de
+conflicto, qué evitar, ritmo/estructura del vídeo largo. Una por línea, empezando
+con "- ". Sin explicaciones, solo la instrucción.
 
 === TITULARES ===
 5 títulos de ejemplo de 20-35 palabras siguiendo el veredicto, en Capitalización De
 Título y cortados con "..." al final. Uno por línea, numerados.
+
+=== DIRECTRICES_SHORT ===
+De 3 a 5 instrucciones imperativas para el guionista de nuestros SHORTS/TikTok
+(~200 palabras, 40-60 segundos, título de 10-18 palabras): mismo ángulo y tema que
+el veredicto de arriba, pero SIN mencionar minutos, actos, setup, escalada ni
+estructura de vídeo largo -- un short no tiene 5 minutos de contexto ni un clímax
+en el minuto 20. Una por línea, empezando con "- ".
+
+=== TITULARES_SHORT ===
+5 títulos de ejemplo de 10-18 palabras (NO 20-35) siguiendo el mismo ángulo, en
+Capitalización De Título. Uno por línea, numerados.
 
 REGLAS: no uses llaves {{ }} en ninguna parte de tu respuesta. No añadas secciones extra.
 No incluyas markdown de cabecera (#) ni negritas."""
@@ -343,14 +365,26 @@ def debate(report, config, progress=None):
     # razona) escribió su razonamiento en voz alta, agotó el presupuesto y
     # devolvió 448 caracteres sin ninguna sección. Antes eso se guardaba tal
     # cual y el dashboard mostraba un veredicto vacío sin explicar por qué.
+    #
+    # El bloque de SHORT (DIRECTRICES_SHORT/TITULARES_SHORT) se engancha al
+    # MISMO mecanismo: si falta, se reintenta -- pero solo se RAISEA si nunca
+    # llega lo esencial (veredicto+directrices). Si el bloque de short no
+    # aparece tras agotar los `attempts` ya presupuestados, se usa el último
+    # resultado esencial-completo y se deja el campo vacío (§17: no se
+    # inventa; el consumidor -- `render_injection(perfil="short")` -- tiene su
+    # propio fallback con dientes para ese caso). Esto NO gasta peticiones de
+    # más: sigue acotado por `debate_retries` (default 3), igual que antes.
     attempts = int(config.get("competition", {}).get("debate_retries", 3))
     raw, sections = "", {}
+    best_raw, best_sections = None, None
     for attempt in range(attempts):
         current = prompt
         if attempt:
-            logger.warning(f"Debate mal formado; reintento {attempt + 1}/{attempts}")
+            logger.warning(f"Debate mal formado o incompleto; reintento {attempt + 1}/{attempts}")
             current = (
-                "TU RESPUESTA ANTERIOR NO SIRVIÓ: te pusiste a razonar en voz alta.\n"
+                "TU RESPUESTA ANTERIOR NO SIRVIÓ: o te pusiste a razonar en voz alta, o te\n"
+                "saltaste las secciones DIRECTRICES_SHORT / TITULARES_SHORT (el bloque para\n"
+                "SHORTS, distinto del de vídeo largo). Escribe las SEIS secciones completas.\n"
                 "Empieza YA con la línea '=== ANALISIS ===' y no escribas NADA antes.\n\n"
             ) + prompt
         raw = _call_openrouter(
@@ -358,12 +392,22 @@ def debate(report, config, progress=None):
         )
         sections = parse_debate(raw)
         if sections["veredicto"].strip() and sections["directrices"].strip():
-            break
+            best_raw, best_sections = raw, sections
+            if sections["directrices_short"].strip():
+                break  # lo esencial Y el bloque de short: no hace falta más
+            continue  # lo esencial está; se insiste por el bloque de short
     else:
-        raise RuntimeError(
-            f"El modelo no devolvió un debate utilizable tras {attempts} intentos. "
-            f"Última respuesta ({len(raw)} caracteres): {raw[:200]}"
+        if best_sections is None:
+            raise RuntimeError(
+                f"El modelo no devolvió un debate utilizable tras {attempts} intentos. "
+                f"Última respuesta ({len(raw)} caracteres): {raw[:200]}"
+            )
+        logger.warning(
+            f"El modelo nunca devolvió DIRECTRICES_SHORT/TITULARES_SHORT tras "
+            f"{attempts} intentos; se guarda el debate SIN bloque de short "
+            f"(render_injection(perfil='short') usa su fallback filtrado)."
         )
+        raw, sections = best_raw, best_sections
 
     advice = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -372,6 +416,8 @@ def debate(report, config, progress=None):
         "veredicto": sections["veredicto"],
         "directrices": _as_list(sections["directrices"]),
         "titulares": _as_list(sections["titulares"]),
+        "directrices_short": _as_list(sections["directrices_short"]),
+        "titulares_short": _as_list(sections["titulares_short"]),
         "raw": raw,
         "sources": [
             {"title": v["title"], "url": v["url"], "channel": v["channel_title"],
@@ -382,8 +428,10 @@ def debate(report, config, progress=None):
 
     save_advice(advice, config)
     logger.info(
-        f"Debate listo: {len(advice['directrices'])} directrices, "
-        f"{len(advice['titulares'])} titulares de ejemplo"
+        f"Debate listo: {len(advice['directrices'])} directrices / "
+        f"{len(advice['titulares'])} titulares (largo), "
+        f"{len(advice['directrices_short'])} directrices / "
+        f"{len(advice['titulares_short'])} titulares (short)"
     )
     return advice
 
@@ -392,13 +440,47 @@ def debate(report, config, progress=None):
 # Inyección en el prompt de historias
 # ----------------------------------------------------------------------------
 
-def render_injection(advice):
-    """Construye el bloque de texto que se inserta en el prompt de historias.
+# Directrices de FORMATO de vídeo largo que NO aplican a un short. Filtro
+# EXPLÍCITO y determinista (§17: lo que importa se impone en código, no se
+# pide) -- se usa SOLO como fallback cuando el advice no trae
+# `directrices_short` (advice viejo, o el modelo nunca las devolvió pese a los
+# reintentos de `debate`). Medido en A/B real de 19 generaciones
+# (10 control / 9 con el bloque largo inyectado tal cual en el prompt de
+# shorts): la directriz "Duración objetivo 32-38 min: 5 min setup, 20-25 min
+# escalada, 5-8 min clímax, 2-3 min cierre." es ruido puro en un prompt de
+# ~200 palabras / 40s. Palabras que delatan esa clase de directriz:
+_FORMATO_LARGO_RE = re.compile(
+    r"\bmin(?:uto)?s?\b|\bduraci[oó]n\b|\bacto(?:s)?\b|\bset ?up\b|"
+    r"\bcl[ií]max\b|\bescalad[ao]\b",
+    re.IGNORECASE,
+)
 
-    CRÍTICO: el prompt se consume con str.format() en script_generator, así que
-    cualquier llave del texto generado por el LLM rompería la generación con
-    KeyError. Se duplican para que format() las devuelva como llaves literales.
+
+def render_injection(advice, perfil="largo"):
+    """Construye el bloque de texto que se inserta en un prompt.
+
+    `perfil`:
+    - "largo" (default, compatible con el uso previo): bloque para
+      `reddit_story.txt` con `directrices`/`titulares` tal cual los devolvió
+      el debate.
+    - "short": bloque para `short_story.txt`. Usa `directrices_short` /
+      `titulares_short` si el advice los trae (debate reciente). Si NO los
+      trae -- advice viejo como `data/competition_advice.json` (5-ago), o el
+      modelo nunca los devolvió -- cae a un FALLBACK con dientes: filtra
+      DETERMINISTAMENTE las directrices largas que hablan de duración/actos/
+      estructura (ver `_FORMATO_LARGO_RE`), NO inyecta los titulares largos
+      (miden 19-23 palabras contra las 10-18 que exige `short_story.txt`), y
+      añade una línea que ORDENA explícitamente la longitud del short en vez
+      de esperar que el modelo la infiera del contexto (§17).
+
+    CRÍTICO: el prompt se consume con str.format() en script_generator /
+    shorts_generator, así que cualquier llave del texto generado por el LLM
+    (en CUALQUIERA de los dos perfiles) rompería la generación con KeyError.
+    Se duplican para que format() las devuelva como llaves literales.
     """
+    if perfil not in ("largo", "short"):
+        raise ValueError(f"perfil desconocido: {perfil!r} (usa 'largo' o 'short')")
+
     def esc(text):
         return text.replace("{", "{{").replace("}", "}}")
 
@@ -408,20 +490,91 @@ def render_injection(advice):
         "Aplica estas directrices al elegir tema, conflicto y título:",
         "",
     ]
-    for d in advice.get("directrices", []):
-        lines.append(f"- {esc(d)}")
 
-    if advice.get("titulares"):
-        lines += ["", "Ejemplos de títulos alineados con lo que funciona ahora mismo:"]
-        for t in advice["titulares"][:5]:
-            lines.append(f'  "{esc(t)}"')
+    if perfil == "largo":
+        for d in advice.get("directrices", []):
+            lines.append(f"- {esc(d)}")
+
+        titulares = advice.get("titulares", [])
+        if titulares:
+            lines += ["", "Ejemplos de títulos alineados con lo que funciona ahora mismo:"]
+            for t in titulares[:5]:
+                lines.append(f'  "{esc(t)}"')
+
+    else:  # perfil == "short"
+        directrices_short = advice.get("directrices_short", [])
+        if directrices_short:
+            for d in directrices_short:
+                lines.append(f"- {esc(d)}")
+        else:
+            # FALLBACK con dientes (ver docstring): filtra las directrices de
+            # formato largo en vez de inyectarlas tal cual.
+            for d in advice.get("directrices", []):
+                if _FORMATO_LARGO_RE.search(d):
+                    continue
+                lines.append(f"- {esc(d)}")
+            lines.append(
+                "- Aplica el MISMO ángulo y tono de arriba, pero el título de "
+                "ESTE short debe tener 10-18 palabras (NO 20-35): es un "
+                "formato distinto, no una versión larga."
+            )
+
+        titulares_short = advice.get("titulares_short", [])
+        if titulares_short:
+            lines += ["", "Ejemplos de títulos alineados con lo que funciona ahora mismo:"]
+            for t in titulares_short[:5]:
+                lines.append(f'  "{esc(t)}"')
+        # Sin fallback de titulares: los largos (20-35 palabras) contradicen
+        # directamente la regla de 10-18 de `short_story.txt` -- es
+        # exactamente el defecto medido en el A/B (2/9 títulos fuera de rango
+        # cuando se inyectaba el bloque largo sin filtrar).
 
     lines.append(END_MARK)
     return "\n".join(lines)
 
 
+# Perfiles recorridos por `apply_to_prompt`/`remove_from_prompt` cuando actúan
+# "por defecto" (perfil=None) sobre los DOS prompts.
+_PROMPT_PROFILES = ("largo", "short")
+
+
 def _prompt_path(config):
     return config.get("paths", {}).get("prompt_template", "./prompts/reddit_story.txt")
+
+
+def _path_for(config, perfil):
+    """Ruta del prompt para ese perfil, o None si el config no la declara.
+
+    Para "short" NO hay ruta por defecto, a propósito, y esto es asimétrico
+    respecto a `_prompt_path` a sabiendas: `apply_to_prompt` **escribe** aquí.
+    Un default a "./prompts/short_story.txt" hace que cualquier llamante que
+    no declare `short_prompt` —un test, el config del gate, un script de
+    medición— reescriba el prompt de PRODUCCIÓN sin haberlo nombrado nunca.
+    No es hipotético: pasó durante la verificación de este mismo cambio. Un
+    test que apuntaba `prompt_template` a una copia acabó inyectando dos
+    bloques en `prompts/short_story.txt` de verdad, y solo se detectó porque
+    el test comprobaba explícitamente que el fichero real seguía intacto.
+
+    "largo" conserva su default histórico: ya existía antes de este cambio y
+    los dos llamantes de producción (`main.py`, `dashboard.py`) pasan el
+    config completo.
+    """
+    if perfil == "short":
+        return (config.get("paths") or {}).get("short_prompt") or None
+    return _prompt_path(config)
+
+
+def _sin_ruta_declarada(prof, explicito):
+    """Ruta no declarada: o revienta (si la pidieron a propósito) o se omite
+    con log ruidoso. Nunca se inventa un destino de escritura (§13)."""
+    msg = (
+        f"config.paths.short_prompt no está declarado: NO se toca el prompt de "
+        f"perfil {prof!r}. No se usa ninguna ruta por defecto a propósito, porque "
+        f"escribiría en el prompt de producción sin que el config lo nombre."
+    )
+    if explicito:
+        raise ValueError(msg)
+    logger.warning(msg)
 
 
 def _detect_newline(text):
@@ -529,10 +682,17 @@ def strip_injection(text):
             result = head + nl + nl + tail
 
 
-def current_injection(config):
-    """El bloque actualmente inyectado en el prompt, o None."""
-    path = _prompt_path(config)
-    if not os.path.isfile(path):
+def current_injection(config, perfil=None):
+    """El bloque actualmente inyectado en un prompt, o None.
+
+    Por defecto (`perfil=None`) mira el prompt de HISTORIAS LARGAS
+    (`prompt_template`) -- comportamiento IDÉNTICO al de antes de este
+    cambio, porque es lo que muestra hoy la pestaña Competencia del
+    dashboard ("bloque inyectado en el prompt de historias"). Pasa
+    `perfil="short"` para consultar `short_prompt` en su lugar.
+    """
+    path = _path_for(config, perfil or "largo")
+    if path is None or not os.path.isfile(path):
         return None
     text = _read_text(path)
     start = text.find(BEGIN_MARK)
@@ -542,16 +702,13 @@ def current_injection(config):
     return text[start:end + len(END_MARK)] if end != -1 else text[start:]
 
 
-def apply_to_prompt(advice, config, backup=True):
-    """Inserta (o reemplaza) el bloque de tendencias en el prompt de historias.
+def _apply_single(advice, path, perfil, backup):
+    """Aplica el bloque de tendencias de `perfil` a UN prompt concreto.
 
-    Se coloca justo antes de la línea final "Historia:" para que sea lo último
-    que lee el modelo antes de escribir. Devuelve la ruta del prompt.
+    Misma mecánica que la `apply_to_prompt` original (backup atómico +
+    strip_injection idempotente + inserción antes de "Historia:"), ahora
+    parametrizada por ruta y perfil para poder repetirla en los dos prompts.
     """
-    if not advice.get("directrices"):
-        raise ValueError("El consejo no tiene directrices; no hay nada que inyectar.")
-
-    path = _prompt_path(config)
     text = _read_text(path)
     nl = _detect_newline(text)
 
@@ -559,7 +716,7 @@ def apply_to_prompt(advice, config, backup=True):
         _write_backup(path, text)
 
     text = strip_injection(text)
-    block = render_injection(advice)
+    block = render_injection(advice, perfil=perfil)
     if nl != "\n":
         # render_injection construye el bloque con "\n" internamente; se
         # traduce al estilo real del fichero para que, tras insertarlo, el
@@ -575,21 +732,66 @@ def apply_to_prompt(advice, config, backup=True):
         new_text = text.rstrip() + nl + nl + block + nl
 
     _atomic_write(path, new_text)
-
-    logger.info(f"Tendencias inyectadas en {path} ({len(advice['directrices'])} directrices)")
+    logger.info(f"Tendencias ({perfil}) inyectadas en {path}")
     return path
 
 
-def remove_from_prompt(config):
-    """Quita el bloque de tendencias del prompt. True si había algo que quitar.
+def apply_to_prompt(advice, config, backup=True, perfil=None):
+    """Inserta (o reemplaza) el bloque de tendencias en el/los prompt(s).
 
-    D2: ahora hace `.bak` ANTES de escribir, igual que `apply_to_prompt`. Antes
-    solo `apply_to_prompt` respaldaba, y como `.bak` está en `.gitignore`, un
-    fallo aquí no se podía recuperar ni desde git.
+    Por defecto (`perfil=None`) aplica en LOS DOS: `reddit_story.txt` con el
+    bloque de vídeo largo y `short_story.txt` con el bloque específico de
+    shorts (`render_injection(advice, perfil="short")` -- NO es el mismo
+    texto, ver esa función). Esta es la firma que siguen llamando
+    `main.py:213` (`apply_to_prompt(advice, config)`) y `dashboard.py:891`
+    sin tocarlas: con `perfil=None` "lo razonable" pasó a ser cerrar el hueco
+    de que los shorts nunca recibían directrices de competencia. Devuelve la
+    LISTA de rutas tocadas.
+
+    `perfil="largo"` o `perfil="short"` aplica SOLO a ese prompt y devuelve
+    su ruta como `str` (firma/retorno idénticos a los de antes de este
+    cambio para ese caso).
+
+    Se coloca justo antes de la línea final "Historia:" de cada prompt, para
+    que sea lo último que lee el modelo antes de escribir.
     """
-    path = _prompt_path(config)
-    text = _read_text(path)
+    if not advice.get("directrices"):
+        raise ValueError("El consejo no tiene directrices; no hay nada que inyectar.")
 
+    perfiles = _PROMPT_PROFILES if perfil is None else (perfil,)
+    if any(p not in _PROMPT_PROFILES for p in perfiles):
+        raise ValueError(f"perfil desconocido: {perfil!r} (usa 'largo', 'short' o None)")
+
+    applied = []
+    for prof in perfiles:
+        path = _path_for(config, prof)
+        if path is None:
+            _sin_ruta_declarada(prof, explicito=perfil is not None)
+            continue
+        if not os.path.isfile(path):
+            logger.warning(
+                f"Prompt de perfil {prof!r} no existe ({path!r}); se omite la inyección."
+            )
+            continue
+        applied.append(_apply_single(advice, path, prof, backup))
+
+    if not applied:
+        raise FileNotFoundError(
+            "Ningún prompt disponible para inyectar (revisa config.paths.prompt_template "
+            "/ config.paths.short_prompt)."
+        )
+
+    return applied[0] if perfil is not None else applied
+
+
+def _remove_single(path):
+    """Quita el bloque de tendencias de UN prompt concreto. True si había algo.
+
+    D2: hace `.bak` ANTES de escribir, igual que `_apply_single`. Antes solo
+    `apply_to_prompt` respaldaba, y como `.bak` está en `.gitignore`, un fallo
+    aquí no se podía recuperar ni desde git.
+    """
+    text = _read_text(path)
     if BEGIN_MARK not in text:
         return False
 
@@ -602,6 +804,33 @@ def remove_from_prompt(config):
 
     _write_backup(path, text)
     _atomic_write(path, new_text)
-
     logger.info(f"Tendencias eliminadas de {path}")
     return True
+
+
+def remove_from_prompt(config, perfil=None):
+    """Quita el bloque de tendencias del prompt (o de los DOS, por defecto).
+
+    Por defecto (`perfil=None`) revierte tanto `reddit_story.txt` como
+    `short_story.txt` -- simétrico con el default nuevo de `apply_to_prompt`.
+    Es la firma que sigue llamando `dashboard.py:898`
+    (`remove_from_prompt(config)`) sin tocarla. `perfil="largo"` o
+    `perfil="short"` revierte solo ese prompt.
+
+    Devuelve True si se quitó algo de AL MENOS un prompt (para el caso de un
+    solo perfil, idéntico al `bool` que devolvía la función original).
+    """
+    perfiles = _PROMPT_PROFILES if perfil is None else (perfil,)
+    if any(p not in _PROMPT_PROFILES for p in perfiles):
+        raise ValueError(f"perfil desconocido: {perfil!r} (usa 'largo', 'short' o None)")
+
+    removed_any = False
+    for prof in perfiles:
+        path = _path_for(config, prof)
+        if path is None:
+            _sin_ruta_declarada(prof, explicito=perfil is not None)
+            continue
+        if not os.path.isfile(path):
+            continue
+        removed_any = _remove_single(path) or removed_any
+    return removed_any
