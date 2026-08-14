@@ -663,6 +663,77 @@ _ECO_MIN_DEL_TITULO = 0.25  # y que cubran al menos este trozo del título
 _PREFIJO_MIN_PALABRAS = 4
 
 
+# Solo espacios. A propósito NO se salta la puntuación de apertura (`¿ ¡ « " ( —`):
+# un fragmento descabezado real empieza con la palabra pelada ("una madrugada…",
+# "mientras yo estaba…"), mientras que `¿que hago ahora?` o `«callate», dijo.` son
+# narración legítima donde el modelo solo se dejó la mayúscula. Saltarse esos
+# signos hacía que la guarda se comiera una pregunta retórica y un diálogo
+# enteros (medido); borrar narración es el lado caro del error (§16).
+_APERTURA_CHARS = " \t\n\r"
+# Hasta dónde se busca el final del fragmento mutilado. Más generoso que
+# `_ECO_MAX_CHARS` porque aquí NO se compara con el título: se busca dónde
+# acaba la frase que quedó descabezada, y medida real: 24 palabras (~140
+# caracteres) en `short_008`.
+_FRAGMENTO_MAX_CHARS = 400
+
+
+def _descartar_fragmento_inicial(story):
+    """Si al quitar el prefijo del título queda la COLA de una frase, se descarta.
+
+    [TITULO-03] `_ensure_title_at_start` borra el solapamiento literal del título
+    sin comprobar que lo que queda detrás **empiece una frase**. Cuando el modelo
+    escribe UNA sola frase que arranca como el título y sigue, quitarle la cabeza
+    deja un fragmento subordinado sin sujeto ni verbo principal, que se narra y se
+    subtitula justo después del título — en el segundo 3.
+
+    Medido en la corrida del 14-ago: 2 de los 4 shorts. `short_006` →
+    *"…Le Obligó A Reconstruirlo Entero. una madrugada para ampliar su piscina…"*;
+    `short_008` → *"…Y El Comprador Lo Rastreó. mientras yo estaba en urgencias…"*.
+    El guardia de eco (`_es_eco_del_titulo`) no los caza porque no son ecos puros:
+    3/11 y 6/24 palabras en común, contra el umbral de 0,60.
+
+    La señal es determinista y no necesita al modelo (§18): en español, detrás de
+    un punto va mayúscula. Si va minúscula, la frase está descabezada.
+
+    Se descarta el fragmento entero en vez de intentar repararlo: sus palabras son
+    justo las que el título ya dice. Y NO se toca nada si no hay una frase completa
+    detrás, o si borrarlo dejaría el speech vacío — perder narración es peor.
+    """
+    limpio = story.lstrip(_APERTURA_CHARS)
+    if not limpio:
+        return story
+
+    primera = limpio[0]
+    if not (primera.isalpha() and primera.islower()):
+        return story
+
+    corte = _fin_de_frase(limpio, limite=_FRAGMENTO_MAX_CHARS)
+    if not corte:
+        logger.warning(
+            "Tras quitar el prefijo del titulo el speech empieza en minuscula "
+            "(frase descabezada) pero NO se encuentra el final de esa frase: se "
+            "deja intacto para no borrar narracion."
+        )
+        return story
+
+    frag = limpio[:corte].strip()
+    resto = limpio[corte:].strip()
+    if not resto:
+        logger.warning(
+            f"Tras quitar el prefijo del titulo quedaria solo un fragmento "
+            f"descabezado ({len(frag.split())} palabras) y nada detras: se deja "
+            f"intacto en vez de vaciar el speech."
+        )
+        return story
+
+    logger.warning(
+        f"Descartado fragmento descabezado al inicio del speech "
+        f"({len(frag.split())} palabras): {frag[:80]!r}. Era la cola de la frase "
+        f"cuyo comienzo repetia el titulo."
+    )
+    return resto
+
+
 def _fin_de_frase(texto, limite=_ECO_MAX_CHARS):
     """Posición tras el primer final de frase dentro de `limite` caracteres."""
     for m in re.finditer(r"[.!?]+(?=\s|$)", texto[:limite]):
@@ -734,6 +805,10 @@ def _ensure_title_at_start(title, story):
         # Remove the overlapping partial title from the story start
         story = " ".join(story_words[overlap:])
         logger.info(f"Eliminado solapamiento de {overlap} palabras del inicio")
+        # Quitar la cabeza puede dejar la COLA de la frase del modelo, que se
+        # narra descabezada en el segundo 3 [TITULO-03]. Solo aquí: si no se
+        # cortó prefijo, el speech empieza donde el modelo lo escribió.
+        story = _descartar_fragmento_inicial(story)
     elif overlap:
         # Coincidencia corta ("Mi hermano…"), no un título parcial. Se deja: la
         # paráfrasis de verdad la caza el guardia de eco de abajo, que sí mide
