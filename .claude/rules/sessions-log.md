@@ -97,16 +97,37 @@ fallo inexistente mientras daba en verde los dos reales. **Arreglados [TITULO-03
 sobre artefactos reales (los 2 shorts rotos pasan a mayúscula, los 2 sanos byte a byte idénticos; el
 falso positivo del gate desaparece y los huérfanos se nombran). **[TRUNC-01] y [SHORTDUR-01] siguen
 ABIERTOS.**
-**Pendiente:** **[TRUNC-01] es el más grave y sigue abierto**: mientras el modelo sobregenere (1392
-palabras para un objetivo de 623), el truncado seguirá cortando el cuerpo y el vídeo prometerá en la
-miniatura un suceso que no narra — y el gate no lo ve, porque comprueba que el bloque de desenlace
-EXISTE, no que la narración sea continua. **[SHORTDUR-01]** necesita que Diego decida qué cifra vale
-(34-41 s reales contra 60-90 s de la spec). **[DRYRUN-01]** sigue VIVO y destruye gameplay: `--dry-run`
-consume y borra el pool; son ~2 líneas, pero `main.py` es de otro track. Igual que la línea que pasaría
-`--shorts-stems` al auditor. Cambia la **huella del auditor** (`ecb603ceb50f` → `c5baf68b73c7`): todos
-los veredictos caducan y hay que re-auditar antes de subir. **No publicar `video_006`** ni
-`short_006`/`short_008`. Los commits de este track están en `feat/competencia` (historia lineal), no en
-`fix/alineador`.
+**2.ª vuelta — verificar rindió MÁS que cazar, y la cuenta es demoledora:** Diego preguntó si convenía
+lanzar Sonnets a atacar los bugs restantes o a verificar los ya arreglados. Se eligió verificar: dos
+`bug-hunter` autocontenidos, sin el contexto del orquestador y con el encargo de REFUTAR. Destaparon
+**seis defectos, y los seis los había introducido el trabajo de ESE MISMO DÍA** [AUDIT-02]: el
+invariante de TTS abortaba en falso (comparaba con `!=`, y el propio cambio del em dash a espacio parte
+un token) **llevándose el chunk del pool**, porque `take_chunk` corre ANTES del `try`; el filtro de
+cabeceras estaba sin anclar (`\s*\d*` casa con NADA) y borraba párrafos que empezaran por *"Bloqueé"* o
+*"Parte de mí"*, **con el invariante nuevo ciego por construcción**; y la línea de cobertura escrita
+para que "no medido" no se leyera como "sano" imprimía `OK 2/2 shorts medidos (todos)` con **CERO**
+medidos, dos líneas debajo de dos avisos que decían lo contrario. Más: `--shorts-stems ""` desactivaba
+el acotamiento en silencio, el chequeo de arranque daba `OK` sin medir, y `peor_tramo` sin guardia en el
+vídeo **mientras su gemelo de shorts sí la tenía**. Y en una 3.ª pasada, **[META-02]** el backstop de
+metadatos toleraba borrar 840 palabras cuando el desenlace entero son 500 —permitía borrar 1,7 veces lo
+que decía proteger— y `_limpiar_bloque` no tenía tope ninguno: el defecto no se había cerrado, se había
+**movido** de la concatenación al bloque; **[FRAG-01]** la guarda de fragmento borraba hasta el 41% del
+cuerpo de un short, y su "no regresión" era vacía porque **0 de 18 pares en disco llegan a la rama
+nueva** (todos salen por el `return` temprano). Todos arreglados y medidos: umbral por bloque calibrado
+contra el caso real de [BASURA-03] (22%), backstop atado a `_CIERRE_MIN_PALABRAS`, tope de 28 palabras
+en el fragmento, invariante solo a la baja. 25 guiones reales sin cambios y la cadena completa con
+**sha256 idéntico**.
+**Pendiente:** **[TRUNC-01] lo cerró el track C** (`d21e6e0`, `8e522fa`: el prompt ORDENABA el
+sobrepaso que luego se truncaba), y el gate ya lo detecta solo — sobre `video_006` canta `FALLA truncado
+narrativo (77%)` y `FALLA coherencia título/cuerpo (0%)`, donde por la mañana daba verde. **Ya no queda
+ningún defecto conocido que llegue al vídeo largo**, que es lo único que sube el uploader. Abiertos, los
+tres solo de shorts: **[SHORTVID-01]**, **[APERTURA-01]** y **[SHORTDUR-01]** (este espera decisión de
+Diego: 34-41 s reales contra 60-90 de la spec). **[WOOSH-01]**: el "arreglo" del woosh es un **no-op
+exacto** —`max(0, 0.25−0.483) = 0`— y el gemelo largo da 0 igual, así que la desincronización sigue
+intacta en los DOS caminos. Sin cubrir en [FRAG-01]: corte en abreviatura (`Sr.`) y dos frases
+descabezadas seguidas. La **huella del auditor** cambió: los veredictos caducan y hay que re-auditar
+antes de subir. **No publicar `video_006`** ni `short_006`/`short_008`. Falta el `client_secret.json` de
+Diego y una producción real de 30 min. Los commits de este track están en `feat/competencia`.
 
 ## v0.8 — 2026-08-13/14 — El alineador repartía sobre la ventana entera de edge-tts ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_alineador_ventana_aplastada.md`.
