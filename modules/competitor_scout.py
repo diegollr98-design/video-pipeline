@@ -22,10 +22,16 @@ import logging
 import math
 import os
 import re
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 
 import requests
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 logger = logging.getLogger(__name__)
 
@@ -107,16 +113,133 @@ def report_path(config):
     return os.path.join(_data_dir(config), "competition_report.json")
 
 
-def load_state(config):
-    """Carga el state persistente. Devuelve la estructura vacía si no existe."""
-    path = state_path(config)
+# -- Lock entre procesos + escritura atómica --------------------------------
+#
+# `data/competitors.json` lo escriben DOS procesos: este módulo (escaneo de
+# competencia) y `youtube_uploader.py` (que carga el mismo state para cobrar
+# `videosInsert`/`thumbnailsSet` del MISMO contador de cuota). Sin lock, un
+# escaneo que tarda minutos en clasificar con el LLM puede tener el state en
+# memoria mientras el subidor carga-cobra-guarda por su cuenta; el que
+# guarda último pisa al otro. Sin escritura atómica, una escritura cortada a
+# mitad deja un JSON ilegible y `load_state` se encontraba reiniciando en
+# silencio el contador Y los competidores acumulados — irreversible, porque
+# `data/` no se versiona.
+#
+# stdlib únicamente: `msvcrt.locking` en Windows, `fcntl.flock` en POSIX.
+
+class _FileLock:
+    """Lock de fichero con timeout. NO se cuelga para siempre."""
+
+    def __init__(self, lock_path, timeout=15.0, poll_interval=0.1):
+        self.lock_path = lock_path
+        self.timeout = timeout
+        self.poll_interval = poll_interval
+        self._fh = None
+
+    def _try_lock(self):
+        if os.name == "nt":
+            self._fh.seek(0)
+            msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def __enter__(self):
+        self._fh = open(self.lock_path, "a+b")
+        deadline = time.time() + self.timeout
+        while True:
+            try:
+                self._try_lock()
+                return self
+            except OSError:
+                if time.time() >= deadline:
+                    self._fh.close()
+                    self._fh = None
+                    raise TimeoutError(
+                        f"No se pudo adquirir el lock de state ({self.lock_path}) "
+                        f"tras {self.timeout}s; otro proceso lo tiene tomado."
+                    )
+                time.sleep(self.poll_interval)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._fh is None:
+            return False
+        try:
+            if os.name == "nt":
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        finally:
+            self._fh.close()
+            self._fh = None
+        return False
+
+
+def _state_lock(path, timeout=15.0):
+    return _FileLock(path + ".lock", timeout=timeout)
+
+
+def _atomic_write_json(path, data):
+    """Escribe `data` en `path` sin dejar nunca un JSON a medias.
+
+    Temporal en el MISMO directorio (para que `os.replace` sea atómico en el
+    mismo volumen) + fsync antes del replace.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".competitors-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _load_state_file(path):
+    """Lee el fichero de state crudo. `None` si no existe o está corrupto.
+
+    Regla del repo: ningún fallback mudo. Si el JSON no se puede parsear NO
+    se reinicia en silencio (eso perdía el contador de cuota del día y los
+    competidores acumulados, sin aviso). Se preserva el fichero corrupto
+    renombrado y se logea a nivel ERROR.
+    """
     if not os.path.isfile(path):
-        return {"updated_at": None, "quota": {}, "competitors": {}}
+        return None
     try:
         with open(path, "r", encoding="utf-8") as f:
-            state = json.load(f)
+            return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"State de competencia ilegible ({e}); se reinicia")
+        corrupt_path = f"{path}.corrupt-{int(time.time())}"
+        try:
+            os.replace(path, corrupt_path)
+            logger.error(
+                f"STATE DE COMPETENCIA ILEGIBLE ({e}). Preservado en "
+                f"'{corrupt_path}' para inspección manual — NO se reinicia en "
+                f"silencio. Contenía el contador de cuota del día y la lista "
+                f"de competidores acumulada; revísalo antes de continuar."
+            )
+        except OSError as rename_err:
+            logger.error(
+                f"STATE DE COMPETENCIA ILEGIBLE ({e}) y no se pudo preservar "
+                f"({rename_err}). Se trata como ausente; revisa '{path}' a mano "
+                f"ANTES de seguir usando el pipeline."
+            )
+        return None
+
+
+def load_state(config):
+    """Carga el state persistente. Devuelve la estructura vacía si no existe."""
+    state = _load_state_file(state_path(config))
+    if state is None:
         return {"updated_at": None, "quota": {}, "competitors": {}}
 
     state.setdefault("quota", {})
@@ -125,9 +248,29 @@ def load_state(config):
 
 
 def save_state(state, config):
+    """Persiste el state de forma atómica y serializada entre procesos.
+
+    El contador de cuota (`quota`) NO se pisa con el valor que traía este
+    proceso en memoria: se hace read-modify-write bajo el lock, sumando solo
+    lo que ESTE `QuotaMeter` cobró desde que cargó el state
+    (`_quota_pending`, escrito por `QuotaMeter.charge`) sobre lo que haya en
+    disco AHORA MISMO. Es lo que hace que el gasto del escaneo y el del
+    subidor de vídeos (`youtube_uploader.py`, que usa el mismo contador) no
+    se pisen aunque los dos carguen-cobren-guarden intercalados. El resto
+    del state sí se sustituye por la copia en memoria del caller, que es la
+    semántica que ya tenía el resto del pipeline.
+    """
     state["updated_at"] = _now().isoformat()
-    with open(state_path(config), "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    path = state_path(config)
+    pending_quota = int(state.pop("_quota_pending", 0) or 0)
+
+    with _state_lock(path):
+        disk_state = _load_state_file(path)
+        today = _now().strftime("%Y-%m-%d")
+        disk_quota = (disk_state or {}).get("quota") or {}
+        base = int(disk_quota.get("units", 0)) if disk_quota.get("date") == today else 0
+        state["quota"] = {"date": today, "units": base + pending_quota}
+        _atomic_write_json(path, state)
 
 
 def load_report(config):
@@ -181,6 +324,12 @@ class QuotaMeter:
         self.spent += cost
         self.spent_this_run += cost
         self._state["quota"] = {"date": self.today, "units": self.spent}
+        # Delta pendiente de persistir por ESTE meter desde que se cargó el
+        # state (no acumulado entre instancias). `save_state` lo usa para el
+        # read-modify-write sobre el contador en disco: así el gasto de este
+        # proceso se SUMA al de disco en vez de pisarlo, aunque otro proceso
+        # (p. ej. `youtube_uploader.py`, mismo contador) haya guardado en medio.
+        self._state["_quota_pending"] = self.spent_this_run
 
 
 def get_api_key(config):
@@ -913,317 +1062,319 @@ def scan(config, discover=True, progress=None):
     all_videos = []
 
     try:
-        # --- 1. Semillas -----------------------------------------------------
-        pending_new = {}  # channel_id -> source
-        for seed in comp.get("seed_channels", []):
-            try:
-                cid = resolve_seed(seed, api_key, meter)
-            except QuotaExhausted:
-                raise
-            except RuntimeError as e:
-                warnings.append(f"Semilla '{seed}' no resuelta: {e}")
-                continue
-            if cid and cid not in competitors and cid not in excluded:
-                pending_new[cid] = f"seed:{seed}"
-
-        # --- 2. Expansión por keywords --------------------------------------
-        if discover and len(_active(competitors)) < int(rules["max_competitors"]):
-            keywords = list(comp.get("keywords") or [])
-            max_searches = int(rules["max_searches_per_scan"])
-
-            # Rotamos las keywords entre escaneos para no gastar siempre las
-            # mismas 4 y quedarnos ciegos al resto de la lista.
-            # Si editas la lista de keywords, el offset guardado apunta a otra
-            # cosa: reordenar la lista dejaba fuera de la rotación justo las
-            # keywords nuevas durante varios escaneos. Al cambiar la huella, se
-            # reinicia y las nuevas entran en la siguiente corrida.
-            fingerprint = str(len(keywords)) + "|" + "|".join(keywords)
-            if state.get("keywords_fingerprint") != fingerprint:
-                if state.get("keywords_fingerprint"):
-                    logger.info("La lista de keywords cambió: se reinicia la rotación")
-                state["keyword_offset"] = 0
-                state["keywords_fingerprint"] = fingerprint
-
-            offset = int(state.get("keyword_offset", 0))
-            if keywords:
-                rotated = keywords[offset % len(keywords):] + keywords[:offset % len(keywords)]
-            else:
-                rotated = []
-
-            for kw in rotated[:max_searches]:
-                if not meter.can_afford("search"):
-                    warnings.append(
-                        f"Cuota insuficiente para más búsquedas; keywords sin explorar: "
-                        f"{', '.join(rotated[len(keywords_used):max_searches])}"
-                    )
-                    break
-                notify(f"Buscando canales con «{kw}»…")
+        try:
+            # --- 1. Semillas -----------------------------------------------------
+            pending_new = {}  # channel_id -> source
+            for seed in comp.get("seed_channels", []):
                 try:
-                    found = search_channel_ids(
-                        kw, api_key, meter, comp["region"], comp["language"], published_after
-                    )
+                    cid = resolve_seed(seed, api_key, meter)
                 except QuotaExhausted:
                     raise
                 except RuntimeError as e:
-                    warnings.append(f"Búsqueda '{kw}' falló: {e}")
+                    warnings.append(f"Semilla '{seed}' no resuelta: {e}")
                     continue
-                keywords_used.append(kw)
-                for cid in found:
-                    if cid not in competitors and cid not in excluded:
-                        pending_new.setdefault(cid, f"keyword:{kw}")
+                if cid and cid not in competitors and cid not in excluded:
+                    pending_new[cid] = f"seed:{seed}"
 
-            # El offset avanza SOLO por las búsquedas que de verdad se hicieron.
-            # Avanzarlo por `max_searches` dejaba las keywords saltadas por falta
-            # de cuota fuera de la rotación para siempre: nunca se exploraban.
-            if keywords:
-                state["keyword_offset"] = (offset + len(keywords_used)) % len(keywords)
+            # --- 2. Expansión por keywords --------------------------------------
+            if discover and len(_active(competitors)) < int(rules["max_competitors"]):
+                keywords = list(comp.get("keywords") or [])
+                max_searches = int(rules["max_searches_per_scan"])
 
-        # --- 2b. Reconsiderar rechazos obsoletos (gratis, sin cuota) ---------
-        revived, rules_changed = revive_rejected(competitors, rules, state)
-        if rules_changed:
-            logger.info("Los filtros de discovery cambiaron: se reconsideran los rechazos")
-        if revived:
-            msg = f"{len(revived)} canales vuelven a evaluarse: {', '.join(revived[:5])}"
-            if len(revived) > 5:
-                msg += f" (+{len(revived) - 5} más)"
-            notify(msg)
+                # Rotamos las keywords entre escaneos para no gastar siempre las
+                # mismas 4 y quedarnos ciegos al resto de la lista.
+                # Si editas la lista de keywords, el offset guardado apunta a otra
+                # cosa: reordenar la lista dejaba fuera de la rotación justo las
+                # keywords nuevas durante varios escaneos. Al cambiar la huella, se
+                # reinicia y las nuevas entran en la siguiente corrida.
+                fingerprint = str(len(keywords)) + "|" + "|".join(keywords)
+                if state.get("keywords_fingerprint") != fingerprint:
+                    if state.get("keywords_fingerprint"):
+                        logger.info("La lista de keywords cambió: se reinicia la rotación")
+                    state["keyword_offset"] = 0
+                    state["keywords_fingerprint"] = fingerprint
 
-        # --- 3. Cualificar canales nuevos -----------------------------------
-        if pending_new:
-            notify(f"Evaluando {len(pending_new)} canales nuevos…")
-            raw_channels = fetch_channels(pending_new.keys(), api_key, meter)
-            for cid, raw in raw_channels.items():
-                record = build_channel_record(raw, pending_new[cid])
-                if is_excluded(record, excluded):
-                    ok, reason = False, "excluido en config.yaml"
+                offset = int(state.get("keyword_offset", 0))
+                if keywords:
+                    rotated = keywords[offset % len(keywords):] + keywords[:offset % len(keywords)]
                 else:
-                    ok, reason = qualify_channel(record, rules)
+                    rotated = []
+
+                for kw in rotated[:max_searches]:
+                    if not meter.can_afford("search"):
+                        warnings.append(
+                            f"Cuota insuficiente para más búsquedas; keywords sin explorar: "
+                            f"{', '.join(rotated[len(keywords_used):max_searches])}"
+                        )
+                        break
+                    notify(f"Buscando canales con «{kw}»…")
+                    try:
+                        found = search_channel_ids(
+                            kw, api_key, meter, comp["region"], comp["language"], published_after
+                        )
+                    except QuotaExhausted:
+                        raise
+                    except RuntimeError as e:
+                        warnings.append(f"Búsqueda '{kw}' falló: {e}")
+                        continue
+                    keywords_used.append(kw)
+                    for cid in found:
+                        if cid not in competitors and cid not in excluded:
+                            pending_new.setdefault(cid, f"keyword:{kw}")
+
+                # El offset avanza SOLO por las búsquedas que de verdad se hicieron.
+                # Avanzarlo por `max_searches` dejaba las keywords saltadas por falta
+                # de cuota fuera de la rotación para siempre: nunca se exploraban.
+                if keywords:
+                    state["keyword_offset"] = (offset + len(keywords_used)) % len(keywords)
+
+            # --- 2b. Reconsiderar rechazos obsoletos (gratis, sin cuota) ---------
+            revived, rules_changed = revive_rejected(competitors, rules, state)
+            if rules_changed:
+                logger.info("Los filtros de discovery cambiaron: se reconsideran los rechazos")
+            if revived:
+                msg = f"{len(revived)} canales vuelven a evaluarse: {', '.join(revived[:5])}"
+                if len(revived) > 5:
+                    msg += f" (+{len(revived) - 5} más)"
+                notify(msg)
+
+            # --- 3. Cualificar canales nuevos -----------------------------------
+            if pending_new:
+                notify(f"Evaluando {len(pending_new)} canales nuevos…")
+                raw_channels = fetch_channels(pending_new.keys(), api_key, meter)
+                for cid, raw in raw_channels.items():
+                    record = build_channel_record(raw, pending_new[cid])
+                    if is_excluded(record, excluded):
+                        ok, reason = False, "excluido en config.yaml"
+                    else:
+                        ok, reason = qualify_channel(record, rules)
+                    if not ok:
+                        record["status"] = "rejected"
+                        record["reject_reason"] = reason
+                        record["rejected_at"] = _now().isoformat()
+                        logger.info(f"Descartado {record['title']}: {reason}")
+                    competitors[cid] = record
+
+            # --- 4. Refrescar métricas de los canales activos --------------------
+            # La exclusión se re-aplica a los ya guardados: si añades un canal a
+            # exclude_channels después de haberlo descubierto, cae en el siguiente
+            # escaneo sin tener que borrar data/competitors.json.
+            for record in _active(competitors):
+                if is_excluded(record, excluded):
+                    record["status"] = "rejected"
+                    record["reject_reason"] = "excluido en config.yaml"
+                    record["rejected_at"] = _now().isoformat()
+                    logger.info(f"Excluido {record['title']} (config)")
+
+            # Invariante: un veredicto negativo del clasificador implica rechazado.
+            # Se re-impone en cada corrida, no solo al clasificar. MEDIDO: al cambiar
+            # los filtros, `revive_rejected` devolvía a activo un canal ya juzgado
+            # fuera de nicho (qualify_channel no mira el veredicto del LLM), y como
+            # ya tenía `llm_in_niche` nadie volvía a clasificarlo: Latidos-Teatro,
+            # un minidrama chino, se quedó fijo en el puesto 8 del ranking.
+            for record in _active(competitors):
+                if record.get("llm_in_niche") is False and not matches_list(record, always_include):
+                    record["status"] = "rejected"
+                    record["reject_reason"] = (
+                        f"fuera de nicho: {record.get('llm_reason', 'juicio del clasificador')}"
+                    )
+                    record["rejected_at"] = _now().isoformat()
+                    logger.info(f"Re-descartado {record['title']} (veredicto de nicho previo)")
+
+            # Veto del usuario sobre el clasificador: `always_include` manda sobre
+            # cualquier rechazo automático. El clasificador emite un JUICIO (p. ej.
+            # descartó rBarra Historias, 124k subs y gameplay 100%, por considerarlo
+            # compilaciones de AskReddit); quien decide si eso compite contigo eres tú.
+            for record in competitors.values():
+                if matches_list(record, always_include) and record["status"] != "active":
+                    record["status"] = "active"
+                    record["reject_reason"] = ""
+                    record["llm_in_niche"] = True
+                    record["llm_reason"] = "incluido a mano (always_include)"
+                    logger.info(f"Re-incluido {record['title']} por always_include")
+
+            active = _active(competitors)
+            # Los más antiguos sin escanear primero: si la cuota se corta, la
+            # siguiente corrida cubre a los que se quedaron fuera.
+            active.sort(key=lambda r: r.get("last_scanned") or "")
+            limit = int(rules["max_competitors"])
+            to_scan = active[:limit]
+            if len(active) > limit:
+                warnings.append(
+                    f"{len(active) - limit} competidores activos no escaneados en esta corrida "
+                    f"(límite max_competitors={limit}); entrarán en la siguiente."
+                )
+
+            # Medir un canal cuesta 2 llamadas (playlistItems + videos). Se exige la
+            # cuota de AMBAS antes de empezar: entrar con 1 unidad suelta dejaba el
+            # canal medio medido y lo hacía caer en el rechazo de más abajo.
+            cost_per_channel = QUOTA_COST["playlistItems"] + QUOTA_COST["videos"]
+
+            for i, record in enumerate(to_scan, 1):
+                if meter.remaining() < cost_per_channel:
+                    warnings.append(
+                        f"Cuota agotada tras {i - 1}/{len(to_scan)} canales; el resto se medirá mañana."
+                    )
+                    break
+
+                notify(f"Midiendo {i}/{len(to_scan)}: {record['title']}")
+                vids = fetch_recent_video_ids(
+                    record["uploads_playlist"], api_key, meter, int(rules["videos_per_channel"])
+                )
+                if not vids:
+                    record["last_scanned"] = _now().isoformat()
+                    continue
+
+                raw_videos = fetch_videos(vids, api_key, meter)
+
+                # Teníamos IDs pero no llegaron datos: es un fallo de cuota o de red,
+                # NO un canal vacío. Se deja intacto (activo, sin last_scanned) para
+                # que la próxima corrida lo re-evalúe. Sin esto, un corte de cuota
+                # marcaba el canal como "sin videos recientes" de forma permanente y
+                # la lista de competidores se vaciaba sola.
+                if not raw_videos:
+                    warnings.append(
+                        f"{record['title']}: no se pudieron leer sus videos (cuota o red); "
+                        f"se re-evaluará en la próxima corrida."
+                    )
+                    continue
+
+                channel_videos = [build_video_record(rv, record) for rv in raw_videos]
+
+                ok, reason = qualify_by_content(record, channel_videos, rules)
+                record["last_scanned"] = _now().isoformat()
                 if not ok:
                     record["status"] = "rejected"
                     record["reject_reason"] = reason
                     record["rejected_at"] = _now().isoformat()
                     logger.info(f"Descartado {record['title']}: {reason}")
-                competitors[cid] = record
-
-        # --- 4. Refrescar métricas de los canales activos --------------------
-        # La exclusión se re-aplica a los ya guardados: si añades un canal a
-        # exclude_channels después de haberlo descubierto, cae en el siguiente
-        # escaneo sin tener que borrar data/competitors.json.
-        for record in _active(competitors):
-            if is_excluded(record, excluded):
-                record["status"] = "rejected"
-                record["reject_reason"] = "excluido en config.yaml"
-                record["rejected_at"] = _now().isoformat()
-                logger.info(f"Excluido {record['title']} (config)")
-
-        # Invariante: un veredicto negativo del clasificador implica rechazado.
-        # Se re-impone en cada corrida, no solo al clasificar. MEDIDO: al cambiar
-        # los filtros, `revive_rejected` devolvía a activo un canal ya juzgado
-        # fuera de nicho (qualify_channel no mira el veredicto del LLM), y como
-        # ya tenía `llm_in_niche` nadie volvía a clasificarlo: Latidos-Teatro,
-        # un minidrama chino, se quedó fijo en el puesto 8 del ranking.
-        for record in _active(competitors):
-            if record.get("llm_in_niche") is False and not matches_list(record, always_include):
-                record["status"] = "rejected"
-                record["reject_reason"] = (
-                    f"fuera de nicho: {record.get('llm_reason', 'juicio del clasificador')}"
-                )
-                record["rejected_at"] = _now().isoformat()
-                logger.info(f"Re-descartado {record['title']} (veredicto de nicho previo)")
-
-        # Veto del usuario sobre el clasificador: `always_include` manda sobre
-        # cualquier rechazo automático. El clasificador emite un JUICIO (p. ej.
-        # descartó rBarra Historias, 124k subs y gameplay 100%, por considerarlo
-        # compilaciones de AskReddit); quien decide si eso compite contigo eres tú.
-        for record in competitors.values():
-            if matches_list(record, always_include) and record["status"] != "active":
-                record["status"] = "active"
-                record["reject_reason"] = ""
-                record["llm_in_niche"] = True
-                record["llm_reason"] = "incluido a mano (always_include)"
-                logger.info(f"Re-incluido {record['title']} por always_include")
-
-        active = _active(competitors)
-        # Los más antiguos sin escanear primero: si la cuota se corta, la
-        # siguiente corrida cubre a los que se quedaron fuera.
-        active.sort(key=lambda r: r.get("last_scanned") or "")
-        limit = int(rules["max_competitors"])
-        to_scan = active[:limit]
-        if len(active) > limit:
-            warnings.append(
-                f"{len(active) - limit} competidores activos no escaneados en esta corrida "
-                f"(límite max_competitors={limit}); entrarán en la siguiente."
-            )
-
-        # Medir un canal cuesta 2 llamadas (playlistItems + videos). Se exige la
-        # cuota de AMBAS antes de empezar: entrar con 1 unidad suelta dejaba el
-        # canal medio medido y lo hacía caer en el rechazo de más abajo.
-        cost_per_channel = QUOTA_COST["playlistItems"] + QUOTA_COST["videos"]
-
-        for i, record in enumerate(to_scan, 1):
-            if meter.remaining() < cost_per_channel:
-                warnings.append(
-                    f"Cuota agotada tras {i - 1}/{len(to_scan)} canales; el resto se medirá mañana."
-                )
-                break
-
-            notify(f"Midiendo {i}/{len(to_scan)}: {record['title']}")
-            vids = fetch_recent_video_ids(
-                record["uploads_playlist"], api_key, meter, int(rules["videos_per_channel"])
-            )
-            if not vids:
-                record["last_scanned"] = _now().isoformat()
-                continue
-
-            raw_videos = fetch_videos(vids, api_key, meter)
-
-            # Teníamos IDs pero no llegaron datos: es un fallo de cuota o de red,
-            # NO un canal vacío. Se deja intacto (activo, sin last_scanned) para
-            # que la próxima corrida lo re-evalúe. Sin esto, un corte de cuota
-            # marcaba el canal como "sin videos recientes" de forma permanente y
-            # la lista de competidores se vaciaba sola.
-            if not raw_videos:
-                warnings.append(
-                    f"{record['title']}: no se pudieron leer sus videos (cuota o red); "
-                    f"se re-evaluará en la próxima corrida."
-                )
-                continue
-
-            channel_videos = [build_video_record(rv, record) for rv in raw_videos]
-
-            ok, reason = qualify_by_content(record, channel_videos, rules)
-            record["last_scanned"] = _now().isoformat()
-            if not ok:
-                record["status"] = "rejected"
-                record["reject_reason"] = reason
-                record["rejected_at"] = _now().isoformat()
-                logger.info(f"Descartado {record['title']}: {reason}")
-                continue
-
-            # Mediana del canal: base para el factor outlier.
-            median = _median([v["views"] for v in channel_videos])
-            record["median_views"] = int(median)
-            record["long_form_ratio"] = round(
-                sum(1 for v in channel_videos if v["duration_sec"] >= rules["min_video_minutes"] * 60)
-                / len(channel_videos), 2
-            )
-            record["uploads_last_30d"] = sum(1 for v in channel_videos if v["age_days"] <= 30)
-            record["last_video_days"] = min(v["age_days"] for v in channel_videos)
-            record["gameplay_ratio"] = round(
-                sum(1 for v in channel_videos if v["gameplay_hint"]) / len(channel_videos), 2
-            )
-            record["first_person_ratio"] = round(
-                sum(1 for v in channel_videos if _FIRST_PERSON.search(v["title"]))
-                / len(channel_videos), 2
-            )
-            # Muestra para que el clasificador de nicho pueda juzgar sin gastar
-            # otra llamada a la API.
-            record["sample_titles"] = [v["title"] for v in channel_videos[:4]]
-
-            for v in channel_videos:
-                v["outlier_ratio"] = round(v["views"] / median, 2) if median else 0.0
-            all_videos.extend(channel_videos)
-
-    except QuotaExhausted as e:
-        warnings.append(str(e))
-        logger.warning(str(e))
-
-    # --- 4b. Clasificación de nicho con el LLM (solo canales sin veredicto) ---
-    if comp.get("classify_with_llm", True):
-        sin_clasificar = [
-            r for r in _active(competitors)
-            if r.get("sample_titles")
-            and "llm_in_niche" not in r
-            and not matches_list(r, always_include)
-        ]
-        if sin_clasificar:
-            # Import diferido: trend_advisor importa script_generator, y no se
-            # quiere esa cadena cargada cuando solo se escanea sin clasificar.
-            from modules.trend_advisor import classify_channels
-
-            verdicts = classify_channels(sin_clasificar, config, progress=progress)
-            fuera = 0
-            for record in sin_clasificar:
-                verdict = verdicts.get(record["channel_id"])
-                if not verdict:
                     continue
-                in_niche, motivo = verdict
-                record["llm_in_niche"] = in_niche
-                record["llm_reason"] = motivo
-                if not in_niche:
-                    record["status"] = "rejected"
-                    record["reject_reason"] = f"fuera de nicho: {motivo}"
-                    record["rejected_at"] = _now().isoformat()
-                    fuera += 1
-                    logger.info(f"Fuera de nicho {record['title']}: {motivo}")
-            if fuera:
-                notify(f"{fuera} canales descartados por nicho")
-                # Sus videos salen del ranking: se midieron antes del veredicto.
-                descartados_ids = {
-                    r["channel_id"] for r in sin_clasificar if r.get("status") == "rejected"
-                }
-                all_videos = [v for v in all_videos if v["channel_id"] not in descartados_ids]
 
-    # --- 5. Puntuar y ordenar ------------------------------------------------
-    max_age = int(rules["max_age_days"])
-    min_views = int(comp["scoring"].get("min_views", 3000))
-    min_duration = float(comp["scoring"].get("min_duration_min", 8)) * 60
+                # Mediana del canal: base para el factor outlier.
+                median = _median([v["views"] for v in channel_videos])
+                record["median_views"] = int(median)
+                record["long_form_ratio"] = round(
+                    sum(1 for v in channel_videos if v["duration_sec"] >= rules["min_video_minutes"] * 60)
+                    / len(channel_videos), 2
+                )
+                record["uploads_last_30d"] = sum(1 for v in channel_videos if v["age_days"] <= 30)
+                record["last_video_days"] = min(v["age_days"] for v in channel_videos)
+                record["gameplay_ratio"] = round(
+                    sum(1 for v in channel_videos if v["gameplay_hint"]) / len(channel_videos), 2
+                )
+                record["first_person_ratio"] = round(
+                    sum(1 for v in channel_videos if _FIRST_PERSON.search(v["title"]))
+                    / len(channel_videos), 2
+                )
+                # Muestra para que el clasificador de nicho pueda juzgar sin gastar
+                # otra llamada a la API.
+                record["sample_titles"] = [v["title"] for v in channel_videos[:4]]
 
-    # Suelo absoluto de vistas. MEDIDO en producción: un canal con mediana de 47
-    # vistas colaba un video de 286 vistas en el puesto 4 del ranking, porque
-    # x6.0 sobre una mediana ridícula es ruido estadístico, no viralidad. El
-    # outlier solo significa algo por encima de un volumen mínimo.
-    # El filtro de formato largo es por CANAL; sin este suelo por VÍDEO, un
-    # corto de 2 minutos de un canal mayoritariamente largo se colaba en un
-    # ranking pensado para producir vídeos de 20-40 min. Es otro producto.
-    fresh = [
-        v for v in all_videos
-        if v["age_days"] <= max_age
-        and v["views"] >= min_views
-        and v["duration_sec"] >= min_duration
-    ]
-    descartados = len(all_videos) - len(fresh)
-    if descartados:
-        logger.info(
-            f"{descartados} videos fuera del ranking (antigüedad, menos de {min_views:,} "
-            f"vistas o menos de {min_duration / 60:.0f} min)"
+                for v in channel_videos:
+                    v["outlier_ratio"] = round(v["views"] / median, 2) if median else 0.0
+                all_videos.extend(channel_videos)
+
+        except QuotaExhausted as e:
+            warnings.append(str(e))
+            logger.warning(str(e))
+
+        # --- 4b. Clasificación de nicho con el LLM (solo canales sin veredicto) ---
+        if comp.get("classify_with_llm", True):
+            sin_clasificar = [
+                r for r in _active(competitors)
+                if r.get("sample_titles")
+                and "llm_in_niche" not in r
+                and not matches_list(r, always_include)
+            ]
+            if sin_clasificar:
+                # Import diferido: trend_advisor importa script_generator, y no se
+                # quiere esa cadena cargada cuando solo se escanea sin clasificar.
+                from modules.trend_advisor import classify_channels
+
+                verdicts = classify_channels(sin_clasificar, config, progress=progress)
+                fuera = 0
+                for record in sin_clasificar:
+                    verdict = verdicts.get(record["channel_id"])
+                    if not verdict:
+                        continue
+                    in_niche, motivo = verdict
+                    record["llm_in_niche"] = in_niche
+                    record["llm_reason"] = motivo
+                    if not in_niche:
+                        record["status"] = "rejected"
+                        record["reject_reason"] = f"fuera de nicho: {motivo}"
+                        record["rejected_at"] = _now().isoformat()
+                        fuera += 1
+                        logger.info(f"Fuera de nicho {record['title']}: {motivo}")
+                if fuera:
+                    notify(f"{fuera} canales descartados por nicho")
+                    # Sus videos salen del ranking: se midieron antes del veredicto.
+                    descartados_ids = {
+                        r["channel_id"] for r in sin_clasificar if r.get("status") == "rejected"
+                    }
+                    all_videos = [v for v in all_videos if v["channel_id"] not in descartados_ids]
+
+        # --- 5. Puntuar y ordenar ------------------------------------------------
+        max_age = int(rules["max_age_days"])
+        min_views = int(comp["scoring"].get("min_views", 3000))
+        min_duration = float(comp["scoring"].get("min_duration_min", 8)) * 60
+
+        # Suelo absoluto de vistas. MEDIDO en producción: un canal con mediana de 47
+        # vistas colaba un video de 286 vistas en el puesto 4 del ranking, porque
+        # x6.0 sobre una mediana ridícula es ruido estadístico, no viralidad. El
+        # outlier solo significa algo por encima de un volumen mínimo.
+        # El filtro de formato largo es por CANAL; sin este suelo por VÍDEO, un
+        # corto de 2 minutos de un canal mayoritariamente largo se colaba en un
+        # ranking pensado para producir vídeos de 20-40 min. Es otro producto.
+        fresh = [
+            v for v in all_videos
+            if v["age_days"] <= max_age
+            and v["views"] >= min_views
+            and v["duration_sec"] >= min_duration
+        ]
+        descartados = len(all_videos) - len(fresh)
+        if descartados:
+            logger.info(
+                f"{descartados} videos fuera del ranking (antigüedad, menos de {min_views:,} "
+                f"vistas o menos de {min_duration / 60:.0f} min)"
+            )
+        score_videos(
+            fresh,
+            comp["scoring"]["weights"],
+            outlier_cap=float(comp["scoring"].get("outlier_cap", 5.0)),
         )
-    score_videos(
-        fresh,
-        comp["scoring"]["weights"],
-        outlier_cap=float(comp["scoring"].get("outlier_cap", 5.0)),
-    )
-    fresh.sort(key=lambda v: v["viral_score"], reverse=True)
+        fresh.sort(key=lambda v: v["viral_score"], reverse=True)
 
-    top_n = int(comp["scoring"]["top_n"])
-    active_records = _active(competitors)
-    active_records.sort(key=lambda r: r.get("median_views", 0), reverse=True)
+        top_n = int(comp["scoring"]["top_n"])
+        active_records = _active(competitors)
+        active_records.sort(key=lambda r: r.get("median_views", 0), reverse=True)
 
-    report = {
-        "generated_at": _now().isoformat(),
-        "quota_used_this_run": meter.spent_this_run,
-        "quota_used_today": meter.spent,
-        "quota_daily_limit": meter.daily_limit,
-        "keywords_used": keywords_used if discover else [],
-        "competitors_total": len(competitors),
-        "competitors_active": len(active_records),
-        "competitors": active_records,
-        "videos_analyzed": len(fresh),
-        "viral": fresh[:top_n],
-        "warnings": warnings,
-    }
+        report = {
+            "generated_at": _now().isoformat(),
+            "quota_used_this_run": meter.spent_this_run,
+            "quota_used_today": meter.spent,
+            "quota_daily_limit": meter.daily_limit,
+            "keywords_used": keywords_used if discover else [],
+            "competitors_total": len(competitors),
+            "competitors_active": len(active_records),
+            "competitors": active_records,
+            "videos_analyzed": len(fresh),
+            "viral": fresh[:top_n],
+            "warnings": warnings,
+        }
 
-    save_state(state, config)
-    save_report(report, config)
+        save_report(report, config)
 
-    notify(
-        f"Escaneo completo: {len(active_records)} competidores activos, "
-        f"{len(fresh)} videos analizados, {meter.spent_this_run} unidades de cuota"
-    )
-    for w in warnings:
-        logger.warning(f"Aviso: {w}")
+        notify(
+            f"Escaneo completo: {len(active_records)} competidores activos, "
+            f"{len(fresh)} videos analizados, {meter.spent_this_run} unidades de cuota"
+        )
+        for w in warnings:
+            logger.warning(f"Aviso: {w}")
 
-    return report
+        return report
+    finally:
+        save_state(state, config)
 
 
 def _active(competitors):

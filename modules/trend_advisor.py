@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
 
 from modules.script_generator import _call_openrouter
@@ -423,24 +424,109 @@ def _prompt_path(config):
     return config.get("paths", {}).get("prompt_template", "./prompts/reddit_story.txt")
 
 
-def strip_injection(text):
-    """Devuelve el prompt sin el bloque auto-generado (idempotente)."""
-    start = text.find(BEGIN_MARK)
-    if start == -1:
-        return text
-    end = text.find(END_MARK, start)
-    if end == -1:
-        # Bloque abierto sin cerrar: cortamos desde el inicio del marcador.
-        return text[:start].rstrip() + "\n"
-    end += len(END_MARK)
+def _detect_newline(text):
+    """Estilo de salto de línea que YA tiene el fichero: se PRESERVA, nunca se
+    impone uno nuevo.
 
-    head = text[:start].rstrip()
-    tail = text[end:].lstrip("\n")
-    if not tail:
-        return head + "\n"
-    # Línea en blanco entre head y tail: es la separación que había ANTES de
-    # inyectar, y sin ella revertir no devolvía el prompt byte a byte.
-    return head + "\n\n" + tail
+    D1 medido por el panel: escribiendo con open(path, "w", encoding="utf-8")
+    SIN newline="", Python traduce cada "\\n" a os.linesep al escribir (en
+    Windows, "\\r\\n"), aunque el fichero en disco fuera LF puro. Con eso el
+    round-trip apply+remove NO era byte a byte: +77 bytes en
+    reddit_story.txt, uno por cada línea del fichero (77 líneas). Detectando
+    el estilo real aquí y leyendo/escribiendo siempre con newline="" (sin
+    traducción en NINGUNA dirección) el round-trip queda exacto.
+    """
+    return "\r\n" if "\r\n" in text else "\n"
+
+
+def _read_text(path):
+    """Lee sin traducir saltos de línea, para poder reproducirlos byte a byte
+    al escribir de vuelta (ver _detect_newline)."""
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def _atomic_write(path, text):
+    """Escribe `text` en `path` de forma atómica: fichero temporal en el
+    MISMO directorio + os.replace().
+
+    D3 medido: `shorts_generator.py` abre el prompt una vez POR short y
+    `script_generator.py` una vez por historia, y un `open(path, "w")`
+    directo TRUNCA el fichero antes de volver a escribirlo — hay una ventana
+    real en la que esa lectura concurrente se encuentra el prompt vacío o a
+    medias. `os.replace()` sustituye el fichero de golpe (es atómico en el
+    mismo volumen, tanto en POSIX como en Windows): no existe ese estado
+    intermedio.
+
+    newline="" también aquí, en simetría con `_read_text`: escribe EXACTAMENTE
+    los bytes de saltos de línea que ya trae `text` (ver _detect_newline),
+    sin que Python los reescriba a os.linesep.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".trend_advisor_tmp_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        os.replace(tmp_path, path)
+    except Exception:
+        # Nunca dejar el temporal huérfano ni tragarnos el error: regla del
+        # repo, ningún fallback silencioso — log ruidoso + propagar.
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        logger.error(f"Escritura atómica de {path} fallida: {tmp_path} no se pudo mover")
+        raise
+
+
+def _write_backup(path, text):
+    """Copia .bak ANTES de tocar el original, también atómica."""
+    _atomic_write(path + ".bak", text)
+
+
+def strip_injection(text):
+    """Devuelve el prompt sin NINGÚN bloque auto-generado (idempotente).
+
+    D2 medido por el panel, dos bugs reales:
+    - Un BEGIN_MARK sin END_MARK (bloque truncado) hacía
+      `return text[:start].rstrip() + "\\n"`: BORRABA todo lo que viniera
+      después, incluida la línea final "Historia:" de la que depende el
+      resto del prompt. Ahora un bloque corrupto NO se toca — se deja
+      intacto y se avisa con logger.error (ruidoso, nunca un borrado en
+      silencio).
+    - Usaba `find` (solo el primer bloque). Si por lo que sea el prompt
+      terminaba con dos bloques inyectados, el segundo sobrevivía. Ahora se
+      recorre en bucle hasta que no quede ningún BEGIN_MARK bien formado.
+    """
+    nl = _detect_newline(text)
+    result = text
+    while True:
+        start = result.find(BEGIN_MARK)
+        if start == -1:
+            return result
+
+        end = result.find(END_MARK, start)
+        if end == -1:
+            logger.error(
+                f"Bloque de tendencias truncado en el prompt: hay "
+                f"{BEGIN_MARK!r} sin su {END_MARK!r} correspondiente. Se "
+                f"deja el fichero SIN TOCAR para no perder contenido "
+                f"legítimo (el ancla 'Historia:' incluida); revísalo a mano."
+            )
+            return result
+        end += len(END_MARK)
+
+        head = result[:start].rstrip()
+        # rstrip()/lstrip() SIN argumento de caracteres tratan \r y \n como
+        # el mismo tipo de whitespace, así que esto normaliza igual de bien
+        # separadores LF (\n) que CRLF (\r\n) sin dejar un \r suelto.
+        tail = result[end:].lstrip("\r\n")
+        if not tail:
+            result = head + nl
+        else:
+            # Línea en blanco entre head y tail: es la separación que había
+            # ANTES de inyectar (medido en los dos prompts reales: siempre
+            # hay una línea en blanco delante de "Historia:"), y sin ella
+            # revertir no devolvía el prompt byte a byte.
+            result = head + nl + nl + tail
 
 
 def current_injection(config):
@@ -448,8 +534,7 @@ def current_injection(config):
     path = _prompt_path(config)
     if not os.path.isfile(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    text = _read_text(path)
     start = text.find(BEGIN_MARK)
     if start == -1:
         return None
@@ -467,41 +552,56 @@ def apply_to_prompt(advice, config, backup=True):
         raise ValueError("El consejo no tiene directrices; no hay nada que inyectar.")
 
     path = _prompt_path(config)
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    text = _read_text(path)
+    nl = _detect_newline(text)
 
     if backup:
-        with open(path + ".bak", "w", encoding="utf-8") as f:
-            f.write(text)
+        _write_backup(path, text)
 
     text = strip_injection(text)
     block = render_injection(advice)
+    if nl != "\n":
+        # render_injection construye el bloque con "\n" internamente; se
+        # traduce al estilo real del fichero para que, tras insertarlo, el
+        # fichero quede UNIFORME (necesario para que strip_injection lo
+        # pueda revertir byte a byte más tarde).
+        block = block.replace("\n", nl)
 
-    anchor = "\nHistoria:"
+    anchor = nl + "Historia:"
     idx = text.rfind(anchor)
     if idx != -1:
-        new_text = text[:idx].rstrip() + "\n\n" + block + "\n" + text[idx:]
+        new_text = text[:idx].rstrip() + nl + nl + block + nl + text[idx:]
     else:
-        new_text = text.rstrip() + "\n\n" + block + "\n"
+        new_text = text.rstrip() + nl + nl + block + nl
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_text)
+    _atomic_write(path, new_text)
 
     logger.info(f"Tendencias inyectadas en {path} ({len(advice['directrices'])} directrices)")
     return path
 
 
 def remove_from_prompt(config):
-    """Quita el bloque de tendencias del prompt. True si había algo que quitar."""
+    """Quita el bloque de tendencias del prompt. True si había algo que quitar.
+
+    D2: ahora hace `.bak` ANTES de escribir, igual que `apply_to_prompt`. Antes
+    solo `apply_to_prompt` respaldaba, y como `.bak` está en `.gitignore`, un
+    fallo aquí no se podía recuperar ni desde git.
+    """
     path = _prompt_path(config)
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    text = _read_text(path)
 
     if BEGIN_MARK not in text:
         return False
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(strip_injection(text))
+    new_text = strip_injection(text)
+    if new_text == text:
+        # Bloque corrupto: strip_injection ya no pudo quitar nada y lo
+        # dejó tal cual (con su logger.error propio). No reescribir nada
+        # sin necesidad — un os.replace() que no cambia contenido no aporta.
+        return False
+
+    _write_backup(path, text)
+    _atomic_write(path, new_text)
 
     logger.info(f"Tendencias eliminadas de {path}")
     return True
