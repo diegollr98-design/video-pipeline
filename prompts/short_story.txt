@@ -38,4 +38,22 @@ Primera línea: el título
 Línea en blanco
 Resto: el speech completo
 
+=== INICIO TENDENCIAS AUTO (no editar a mano) ===
+TENDENCIAS DE LA COMPETENCIA (medidas el 2026-08-14).
+Aplica estas directrices al elegir tema, conflicto y título:
+
+- Abre con la revelación impactante en los primeros 3 segundos: “Mi suegra envenenó la cena…”.
+- Muestra el giro legal (testamento, policía, abogado) con texto en pantalla, sin narración extendida.
+- Centra el short en un solo conflicto familiar y una sola locación visual.
+- Termina con una frase de justicia inmediata: “Ella perdió todo en 24 horas”.
+- Añade una pregunta directa al espectador: “¿Qué harías tú? Comenta”.
+
+Ejemplos de títulos alineados con lo que funciona ahora mismo:
+  "Suegra Envenena Cena Navidad Y Yo Descubro Testamento Secreto Totalmente"
+  "Marido Traiciona En Boda Y Policía Aparece En Altar Inesperadamente"
+  "Padre Echa De Casa Comprada Y Abogado Revela Deuda Real"
+  "Suegra Roba Herencia Madre Pero Yo Grabo Confesión Y Gano Juicio"
+  "Esposo Obliga Cuidar Amante Y Yo Uso Su Dinero Para Destruirlo"
+=== FIN TENDENCIAS AUTO ===
+
 Historia:

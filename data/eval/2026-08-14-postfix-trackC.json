@@ -1,0 +1,32 @@
+{
+  "video": "test_e2e/output/video_007_final.mp4",
+  "ass": "test_e2e/temp/video_007_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 586,
+  "n_palabras_whisper": 611,
+  "n_emparejadas": 578,
+  "cobertura": 0.9863,
+  "error_medio_abs": 0.0797,
+  "error_max_abs": 0.43,
+  "sesgo": -0.0679,
+  "error_p95": 0.16,
+  "palabras_muy_tarde": 0,
+  "peor_tramo": {
+    "mediana": -0.16,
+    "t": 20.13,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "JUSTICIA",
+      "hueco": 0.44,
+      "t": 123.4
+    },
+    {
+      "tras": "INVIERNO",
+      "hueco": 0.46,
+      "t": 135.21
+    }
+  ],
+  "medicion_valida": true
+}

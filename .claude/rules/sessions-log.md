@@ -14,6 +14,42 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v1.0 — 2026-08-14 — Competencia: el subsistema no llegaba a los shorts… ni había llegado NUNCA a nada 🔶
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_C_competencia.md`. El agente **ciego**
+destapó lo que el SEED daba por sentado: `apply_to_prompt` **no se había ejecutado jamás** — no era "el
+98% de los artefactos se queda fuera", era el **100%**. El SEED encuadraba el hueco como "replicar al
+gemelo de shorts" un mecanismo que funcionaba; no funcionaba porque nadie lo había llamado. Veredicto
+⛔ PARAR; Diego aprobó reordenar: **bugs → medir → decidir si inyectar**. Cerrado: round-trip byte a
+byte [COMPET-02], `strip_injection` que destruía el prompt [COMPET-03], contabilidad de cuota
+[QUOTA-01], perfil de directrices propio para shorts, y disparo programado del escaneo (nunca de la
+producción: la subida está gateada por decisión de Diego, así que programarla no da autonomía).
+**Incidentes:** [COMPET-01..04] [QUOTA-01] [INSTR-07] [PARALELO-01] · destapados por el `output-audit`
+y **sin dueño**: [TRUNCA-01] [SHORTVID-01] [APERTURA-01] [GATE-05b].
+**Verificación:** round-trip binario `5094→5171B (CRLF 0→77)` **→ idéntico**, en LF y en CRLF; sobre el
+fichero real, quitar devuelve el sha256 exacto y el `git diff` son **18 inserciones, 0 borrados** (antes
+habrían sido 40 líneas reescritas). Cuota: con un 404 inyectado, **401 unidades gastadas y 0
+registradas → ahora persistidas**; carrera escaneo↔subidor reproducida, se perdían **1650** unidades y
+el paso 4 del protocolo del SEED **decía CUADRA**. Escaneo real disparado **desde el Programador**:
+304,6 s, código 0, cuota **0 → 457 (delta exacto)**, 221 → 232 canales; el `PYTHONUTF8=1` era necesario
+de verdad (el log imprime `→` y `¿` bajo cp1252). Debate real: el guardia **reintentó 2 veces** antes de
+devolver las secciones de short. A/B de shorts en **3 corridas, 55 generaciones**, instrumento calibrado
+contra casos conocidos. `/eval`: medio 0,080 s / máx 0,430 / sesgo −0,068 / cobertura 98,6%, con
+**control del instrumento exacto** (re-medir `video_006` reproduce su baseline al dígito).
+**Lo que esto enseña:** (a) **el efecto que casi cierra el track no replicó** — el desplome del "dato
+duro" daba p=0,014 en una corrida y p=1,00 en la réplica, porque el control osciló 0/10 → 6/12 → 2/12
+con el prompt idéntico: recomendé "no aplicar" sobre una falsa alarma y la réplica lo corrigió; (b)
+**el fix introdujo su propio defecto y lo cazó su test** [COMPET-04]: `_path_for` daba a "short" una
+ruta por defecto y reescribió el prompt de PRODUCCIÓN desde un test; (c) mi instrumento del A/B
+**emitió veredicto sobre el conjunto vacío con exit 0** [INSTR-07]; (d) el gate es **ciego a este
+cambio por construcción** — `trend_advisor`/`competitor_scout` solo viven detrás de `main.py:405`.
+**Pendiente:** **[TRUNCA-01] es lo más grave y no tiene dueño**: `video_007` promete en su TÍTULO
+(y por tanto en la miniatura y la intro) *"el notario descubrió la coacción y anuló todo"* y **no lo
+narra jamás** — 1688 palabras del cuerpo descartadas, `anul-` solo aparece dentro del título; el gate lo
+aprobó porque ningún check lee el warning del truncado. Con él, [SHORTVID-01] y [APERTURA-01]. El
+prompt LARGO sigue **sin inyectar** (nunca lo he medido); solo se aplicó al de shorts. El guardia de
+título de short (acepta 8-45 donde el prompt pide 10-18) y el 75% de la historia larga que no ve las
+directrices (`_generate_continuation`) siguen abiertos, en ficheros de otro track.
+
 ## v0.9 — 2026-08-14 — Caza de bugs: cinco borrados silenciosos y un gate que daba la nota perfecta ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_D_caza_bugs.md`. El panel **tumbó
 el orden de prioridades del SEED** (sesgo del retrovisor: su clase nº1 ya estaba cerrada, la nº6 era
