@@ -33,11 +33,14 @@ propósito) con media ≤ 0,20 s y máximo ≤ 0,30 s.
 
 ## El fixture — `test_e2e/`
 
-Ya existe y no hay que construirlo: `test_e2e/clip.mp4` (clip corto real) + `test_e2e/config.yaml`
+Ya existe y no hay que construirlo: `test_e2e/input/clip.mp4` (clip corto real) + `test_e2e/config.yaml`
 (mismo pipeline, `target_duration_min` bajado, rutas propias). **No hace falta procesar los 13 GB de
 gameplay para validar la cadena** — eso es lo que hizo posible la validación E2E de ago 2026.
 
-⚠️ `test_e2e/clip.mp4` **no se borra jamás**. Sin él no hay gate.
+⚠️ `test_e2e/input/clip.mp4` **no se borra jamás**. Sin él no hay gate. La ruta correcta lleva
+`input/` en medio: este fichero (y `CLAUDE.md`, y `engineer.md`) dijeron `test_e2e/clip.mp4` durante
+días, que **no existe** — una limpieza de disco que se fiara de esa lista habría "protegido" un path
+inexistente y borrado el fixture de verdad.
 
 ⚠️ El fixture debe tener contenido **no repetido**. Un texto que repite párrafos hace que el
 emparejador de la medición enganche la copia equivocada y devuelva un número falso — con la firma

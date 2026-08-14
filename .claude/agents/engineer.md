@@ -81,7 +81,8 @@ bien": pega la salida), y qué queda pendiente.
   Un segmento que falla al extraerse **no se añade** a la lista.
 - **Nunca** usar `-hwaccel cuda` junto a filtros de CPU (`ass`, `boxblur`, `overlay`) — 10-15 min por
   short por las transferencias GPU↔CPU.
-- **Nunca** borrar `pool/`, `input/`, `output/` ni `test_e2e/clip.mp4`.
+- **Nunca** borrar `pool/`, `input/`, `output/` ni `test_e2e/input/clip.mp4` (ojo: la ruta es
+  `test_e2e/**input**/clip.mp4`; durante días se escribió `test_e2e/clip.mp4`, que no existe).
 - **Nunca** commitear `.env` ni ninguna API key.
 - **Nunca** `git push` sin que Diego lo pida en ese mismo mensaje.
 - **Nunca** dejar procesos de Streamlit o FFmpeg huérfanos tras una verificación.
