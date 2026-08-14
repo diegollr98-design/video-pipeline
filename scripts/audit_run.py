@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -45,20 +46,43 @@ def _norm_pal(w):
 
 
 def _ffprobe(path, campos, stream=False):
+    """Devuelve los valores pedidos, o `None` si ffprobe NO pudo medirlos.
+
+    [GATE-02]: antes devolvía `r.stdout.split()` sin mirar `returncode`. Con un
+    fichero inexistente o corrupto, ffprobe termina con error y stdout viene
+    VACÍO -> `[]` -> los consumidores hacían `float(...[0])` y reventaban con
+    IndexError SIN mensaje sobre qué falló, o (peor, si el campo pedido tenía
+    varios valores) tomaban un resultado parcial por bueno. `None` es explícito:
+    "no se pudo medir", nunca "0" ni una lista vacía silenciosa (§16).
+    """
     sel = ["-select_streams", "v:0"] if stream else []
     ent = f"stream={campos}" if stream else f"format={campos}"
     r = subprocess.run(
         ["ffprobe", "-v", "error", *sel, "-show_entries", ent,
          "-of", "default=noprint_wrappers=1:nokey=1", path],
         capture_output=True, text=True)
-    return r.stdout.split()
+    valores = r.stdout.split()
+    n_esperado = len(campos.split(","))
+    if r.returncode != 0 or len(valores) < n_esperado:
+        return None
+    return valores
 
 
 def loudness(path):
-    """LUFS integrados, medidos con ebur128 (el estándar que usa YouTube)."""
+    """LUFS integrados, medidos con ebur128 (el estándar que usa YouTube).
+
+    `None, None` si ffmpeg no pudo medir (returncode != 0): antes solo se
+    miraba si el patrón aparecía en stderr, así que un ffmpeg que fallaba
+    ANTES de llegar al filtro `ebur128` daba el mismo `None` que uno que
+    terminaba bien y no encontraba el patrón — resultado correcto por
+    casualidad, pero sin la guarda explícita cualquier salida parcial de
+    stderr con texto parecido lo habría colado como medido.
+    """
     r = subprocess.run(
         ["ffmpeg", "-nostdin", "-i", path, "-af", "ebur128=framelog=quiet", "-f", "null", "-"],
         capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, None
     m = re.findall(r"I:\s+(-?\d+\.\d+)\s+LUFS", r.stderr)
     p = re.findall(r"Peak:\s+(-?\d+\.\d+)\s+dBFS", r.stderr)
     return (float(m[-1]) if m else None), (float(p[-1]) if p else None)
@@ -69,11 +93,22 @@ def _silencios(path, umbral_db=-35, dur_min=0.25):
 
     Instrumento que NO depende de Whisper: cuando el alineador y edge-tts se
     contradijeron en 5 s, esto fue lo que decidió quién mentía [ANCLA-03].
+
+    Devuelve `None` si ffmpeg NO pudo medir (returncode != 0) — [GATE-02]:
+    antes ignoraba el `returncode` y devolvía `[]` en ese caso, INDISTINGUIBLE
+    de "medí el audio y no hay silencios". Eso es lo que hacía que
+    `pausas_inventadas` diera `exceso = max(0, 0 - signos) = 0` -> "0,0 pausas
+    por 1000 palabras", la nota perfecta, con un audio que ni se pudo abrir.
+    `[]` (lista vacía) sigue significando "medido, 0 silencios"; `None`
+    significa "no se sabe". El llamador NUNCA puede tratar el segundo como el
+    primero.
     """
     r = subprocess.run(
         ["ffmpeg", "-nostdin", "-i", path, "-af",
          f"silencedetect=noise={umbral_db}dB:d={dur_min}", "-f", "null", "-"],
         capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
     inicios = [float(x) for x in re.findall(r"silence_start:\s*(-?[\d.]+)", r.stderr)]
     finales = [float(x) for x in re.findall(r"silence_end:\s*(-?[\d.]+)", r.stderr)]
     return list(zip(inicios, finales))
@@ -90,10 +125,20 @@ def voz_sin_subtitulo(media, ass_words, holgura=0.15, umbral=0.35):
     Se ignora todo lo anterior al primer cue: durante la intro el narrador dice
     la frase del título y los subtítulos están suprimidos A PROPÓSITO
     (`skip_until`), así que contarlo sería un falso positivo garantizado.
+
+    Devuelve `(None, None)` si ffprobe o `_silencios` no pudieron medir sobre
+    `media` [GATE-02]. Antes se indexaba `_ffprobe(...)[0]` sin comprobar
+    nada (IndexError sin contexto con un fichero corrupto) y se iteraba
+    `_silencios(media)` dando por hecho que SIEMPRE era una lista: con el
+    fix de abajo eso ahora puede ser `None`, y `None` NUNCA se trata como
+    "cero huecos" en el llamador.
     """
     if not ass_words:
         return [], 0.0
-    dur = float(_ffprobe(media, "duration")[0])
+    dur_campos = _ffprobe(media, "duration")
+    if dur_campos is None:
+        return None, None
+    dur = float(dur_campos[0])
     inicio = min(s for _, s, _ in ass_words)      # fin de la intro
 
     # Intervalos CON subtítulo, fundidos y dilatados: los huecos de milisegundos
@@ -108,8 +153,11 @@ def voz_sin_subtitulo(media, ass_words, holgura=0.15, umbral=0.35):
             cubierto.append([s, e])
 
     # Voz = complemento del silencio
+    sil = _silencios(media)
+    if sil is None:
+        return None, None
     voz, prev = [], inicio
-    for s, e in _silencios(media):
+    for s, e in sil:
         if s > prev:
             voz.append((prev, min(s, dur)))
         prev = max(prev, e)
@@ -285,6 +333,12 @@ def pausas_inventadas(wav, story_path):
         return None, None
     signos = sum(texto.count(c) for c in ".,;:!?")
     sil = _silencios(wav)
+    if sil is None:
+        # [GATE-02]: esta es la fuga real. `_silencios` fallando (ffmpeg no
+        # pudo abrir `wav`) daba ANTES `[]`, y `max(0, 0 - signos) = 0` ->
+        # "0,0 pausas por 1000 palabras", indistinguible de un audio limpio.
+        print(f"{AVISO} no se pudieron medir los silencios de {wav}: ffmpeg falló")
+        return None, None
     exceso = max(0, len(sil) - signos)
     return exceso, exceso / palabras * 1000
 
@@ -353,12 +407,20 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
 
     # --- COBERTURA: lo que ninguna métrica de desfase puede ver
     huecos, total_hueco = voz_sin_subtitulo(video, ass_words)
-    est = OK if total_hueco < 1.0 else MAL
-    peor = max(huecos, key=lambda h: h[1] - h[0]) if huecos else None
-    detalle = (f"peor {peor[1]-peor[0]:.2f}s en t={peor[0]:.1f}s" if peor else "ninguno")
-    print(f"{est} voz SIN subtítulo: {total_hueco:.2f}s en {len(huecos)} tramo(s), {detalle}")
-    if est == MAL:
-        fallos.append(f"{total_hueco:.1f}s de voz sin subtítulo en pantalla ({detalle})")
+    if total_hueco is None:
+        # [GATE-02]: no medible NUNCA es "0 huecos". ffprobe/ffmpeg fallaron
+        # sobre este vídeo.
+        print(f"{MAL} voz SIN subtítulo: NO se pudo medir (ffprobe/ffmpeg "
+              f"fallaron sobre {os.path.basename(video)})")
+        fallos.append("voz sin subtítulo: no medible (ffprobe/ffmpeg fallaron), "
+                      "no se sabe si hay tramos sin subtitular")
+    else:
+        est = OK if total_hueco < 1.0 else MAL
+        peor = max(huecos, key=lambda h: h[1] - h[0]) if huecos else None
+        detalle = (f"peor {peor[1]-peor[0]:.2f}s en t={peor[0]:.1f}s" if peor else "ninguno")
+        print(f"{est} voz SIN subtítulo: {total_hueco:.2f}s en {len(huecos)} tramo(s), {detalle}")
+        if est == MAL:
+            fallos.append(f"{total_hueco:.1f}s de voz sin subtítulo en pantalla ({detalle})")
 
     # --- palabras aplastadas en el suelo de duración
     peor_racha, rachas = rachas_aplastadas(ass_words)
@@ -457,16 +519,31 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
             print(f"{AVISO} no se pudo comprobar la puntuación: {e}")
 
     # --- artefactos, duración y peso
-    dur = float(_ffprobe(video, "duration")[0])
-    size_gb = os.path.getsize(video) / 1024**3
-    br = float(_ffprobe(video, "bit_rate")[0]) / 1e6
-    w, h = _ffprobe(video, "width,height", stream=True)[:2]
-    print(f"{OK} vídeo: {dur/60:.2f} min  {w}x{h}  {br:.1f} Mbps  {size_gb:.2f} GB")
-    if chunk_dur:
-        ratio = dur / chunk_dur
-        est = OK if 0.9 <= ratio <= 1.1 else AVISO
-        print(f"{est} ratio vídeo/chunk: {ratio:.3f}  "
-              f"({'gameplay repetido' if ratio > 1.1 else 'gameplay desperdiciado' if ratio < 0.9 else 'ajustado'})")
+    #
+    # [GATE-02]: antes se indexaba `_ffprobe(...)[0]` a pelo, así que un vídeo
+    # corrupto o inaccesible reventaba con IndexError sin decir qué falló (y,
+    # con el `_ffprobe` viejo, un campo parcialmente leído se tomaba por
+    # bueno). `None` bloquea explícitamente en vez de fallar en silencio.
+    dur_f = _ffprobe(video, "duration")
+    br_f = _ffprobe(video, "bit_rate")
+    wh_f = _ffprobe(video, "width,height", stream=True)
+    if dur_f is None or br_f is None or wh_f is None:
+        print(f"{MAL} artefactos: ffprobe NO pudo medir duración/bitrate/resolución "
+              f"de {os.path.basename(video)} (¿archivo corrupto o inaccesible?)")
+        fallos.append(f"ffprobe no pudo medir {os.path.basename(video)}: "
+                      f"no se sabe si el vídeo está sano")
+        dur = None
+    else:
+        dur = float(dur_f[0])
+        size_gb = os.path.getsize(video) / 1024**3
+        br = float(br_f[0]) / 1e6
+        w, h = wh_f[:2]
+        print(f"{OK} vídeo: {dur/60:.2f} min  {w}x{h}  {br:.1f} Mbps  {size_gb:.2f} GB")
+        if chunk_dur:
+            ratio = dur / chunk_dur
+            est = OK if 0.9 <= ratio <= 1.1 else AVISO
+            print(f"{est} ratio vídeo/chunk: {ratio:.3f}  "
+                  f"({'gameplay repetido' if ratio > 1.1 else 'gameplay desperdiciado' if ratio < 0.9 else 'ajustado'})")
 
     i, tp = loudness(video)
     if i is not None:
@@ -474,6 +551,11 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         pico = f", pico {tp:.1f} dBFS" if tp is not None else ""
         print(f"{est} loudness: {i:.1f} LUFS{pico}. YouTube normaliza "
               f"a -14 y SOLO BAJA: por debajo suena más flojo que la competencia")
+    else:
+        # Antes esto se saltaba en silencio si `loudness()` no encontraba el
+        # patrón en stderr, indistinguible de "no hizo falta comprobarlo".
+        print(f"{AVISO} loudness: NO se pudo medir (ffmpeg falló sobre "
+              f"{os.path.basename(video)}) — informativo, no bloquea la subida")
 
     # --- el título contra el campo REAL de YouTube (el que se PUBLICARÍA)
     lineas_titulo, fallos_titulo = evalua_titulo_youtube(video)
@@ -494,7 +576,12 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
     fallos = []
     titulos_f = sorted(glob.glob(os.path.join(shorts_dir, "*_title.txt")))
     mp4s = sorted(glob.glob(os.path.join(shorts_dir, "*.mp4")))
-    print(f"{OK} artefactos: {len(mp4s)} mp4 y {len(titulos_f)} títulos")
+    # [GATE-02]: "0 mp4 y 0 títulos" NO es lo mismo que "medí y están todos
+    # bien" — es "no hay nada que auditar aquí". Antes salía en OK, idéntico
+    # a la nota perfecta de un directorio con shorts sanos.
+    est_artefactos = AVISO if not mp4s and not titulos_f else OK
+    print(f"{est_artefactos} artefactos: {len(mp4s)} mp4 y {len(titulos_f)} títulos"
+          + ("  (nada que auditar en este directorio)" if est_artefactos == AVISO else ""))
     if len(mp4s) != len(titulos_f):
         fallos.append("faltan artefactos de shorts")
 
@@ -596,6 +683,13 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
         # el mismo agujero de cobertura, en el gemelo: 3 de los 20 shorts del
         # 11-ago tenían voz sonando con la pantalla sin subtítulo
         huecos, total = voz_sin_subtitulo(mp4, aw)
+        if total is None:
+            # [GATE-02]: el mismo fallo abierto, en el gemelo. `None` nunca
+            # es "0 huecos".
+            print(f"{MAL} {stem}: voz SIN subtítulo NO se pudo medir "
+                  f"(ffprobe/ffmpeg fallaron)")
+            fallos.append(f"{stem}: voz sin subtítulo no medible")
+            continue
         est = OK if total < 0.5 else MAL
         print(f"{est} {stem}: voz SIN subtítulo {total:.2f}s en {len(huecos)} tramo(s)")
         if est == MAL:
@@ -643,10 +737,29 @@ def main():
     solo = {s.strip() for s in args.stem.split(",")} if args.stem else None
 
     fallos = []
-    for video in sorted(glob.glob(os.path.join(args.output, "*_final.mp4"))):
+
+    # [GATE-02] ida 1: `--stem` que no casa con NINGÚN vídeo de `--output` se
+    # tragaba en silencio (el `continue` del bucle no deja rastro) y el gate
+    # podía terminar en verde sin haber auditado ni un solo vídeo de los
+    # pedidos. Se calcula ANTES del bucle, sobre el glob completo, para no
+    # depender de qué stems sobrevivan al filtro.
+    videos_disponibles = sorted(glob.glob(os.path.join(args.output, "*_final.mp4")))
+    stems_disponibles = {os.path.basename(v)[: -len("_final.mp4")] for v in videos_disponibles}
+    if solo:
+        faltantes = solo - stems_disponibles
+        if faltantes:
+            msg = (f"--stem pidió auditar {', '.join(sorted(faltantes))} pero no "
+                  f"existe(n) en {args.output}: no hay .mp4 que auditar para "
+                  f"ese/os stem(s), no se sabe si son publicables")
+            print(f"{MAL} {msg}")
+            fallos.append(msg)
+
+    n_video_procesados = 0
+    for video in videos_disponibles:
         stem = os.path.basename(video)[: -len("_final.mp4")]
         if solo and stem not in solo:
             continue
+        n_video_procesados += 1
         ass = os.path.join(args.temp, f"{stem}_subs.ass")
         story = os.path.join(args.temp, f"{stem}_story.txt")
         if not os.path.exists(ass):
@@ -658,11 +771,49 @@ def main():
                               medido=False)
             fallos.append(f"{stem} sin auditar")
             continue
-        f_video = audita_video(video, ass, story, args.chunk_dur, args.model)
-        escribe_veredicto(video, f_video)
-        fallos += f_video
+        # [GATE-02] ida 2: `audita_video` corría SIN try/except. Un vídeo que
+        # petaba (fichero corrupto, excepción de instrumento, lo que sea) se
+        # llevaba por delante TODOS los vídeos siguientes del bucle Y la
+        # auditoría de shorts entera (estaba fuera del bucle, después). Cada
+        # vídeo se aísla: si peta, ese vídeo queda NO PUBLICABLE con el motivo
+        # y el bucle sigue con los demás.
+        try:
+            f_video = audita_video(video, ass, story, args.chunk_dur, args.model)
+            escribe_veredicto(video, f_video)
+            fallos += f_video
+        except Exception as e:
+            traceback.print_exc()
+            msg = (f"excepción auditando {stem}: {type(e).__name__}: {e}")
+            print(f"{MAL} {msg}")
+            escribe_veredicto(video, [msg])
+            fallos.append(msg)
 
-    fallos += audita_shorts(args.shorts_dir, args.temp, args.shorts, args.model)
+    # SIEMPRE corre, aunque algún vídeo largo haya petado arriba: antes vivía
+    # fuera del bucle sin protección, así que una excepción en un solo vídeo
+    # se llevaba por delante la auditoría ENTERA de shorts.
+    try:
+        fallos += audita_shorts(args.shorts_dir, args.temp, args.shorts, args.model)
+    except Exception as e:
+        traceback.print_exc()
+        msg = f"excepción auditando shorts en {args.shorts_dir}: {type(e).__name__}: {e}"
+        print(f"{MAL} {msg}")
+        fallos.append(msg)
+
+    # [GATE-02] ida 3: conjunto vacío. Sin ningún vídeo ni ningún short en los
+    # directorios (el caso por defecto de un `--output`/`--shorts-dir` recién
+    # creados, o de una corrida que no ha producido nada todavía) el bucle no
+    # itera nunca, `audita_shorts` imprime "0 mp4 y 0 títulos" y `fallos`
+    # seguía vacío: EXIT=0, "sin defectos MEDIBLES" — la nota perfecta de no
+    # haber medido NADA. Solo se dispara sin `--stem`: con `--stem` puesto, un
+    # 0 ya generó su propio fallo explícito arriba (la ida 1), y no hace falta
+    # duplicar el mensaje.
+    n_mp4_shorts = len(glob.glob(os.path.join(args.shorts_dir, "*.mp4")))
+    if solo is None and n_video_procesados == 0 and n_mp4_shorts == 0:
+        msg = (f"no se ha auditado NADA: 0 vídeos en {args.output} y 0 shorts en "
+              f"{args.shorts_dir} — un conjunto vacío no es una salida sana, es "
+              f"una salida sin medir")
+        print(f"{MAL} {msg}")
+        fallos.append(msg)
 
     print("\n" + "=" * 62)
     if fallos:
