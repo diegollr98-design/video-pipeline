@@ -538,11 +538,20 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
     med = sum(abs_e) / len(abs_e)
     sesgo = sum(errs) / len(errs)
 
-    est = OK if abs(pt["mediana"]) <= 0.35 else MAL
-    if est == MAL:
+    # `pt` es None con menos de 40 pares (`eval_sync.peor_tramo`). El gemelo de
+    # shorts (`audita_shorts`) ya tenía la guarda `if pt and ...`; aquí faltaba, y
+    # un vídeo corto reventaba con TypeError llevándose por delante las otras 13
+    # mediciones y sustituyéndolas por un traceback.
+    est = OK if (pt and abs(pt["mediana"]) <= 0.35) else MAL
+    if est == MAL and pt:
         fallos.append(f"peor tramo {pt['mediana']:+.3f}s en t={pt['t']}s")
+    elif not pt:
+        fallos.append("sincronismo: sin tramo medible (menos de 40 palabras "
+                      "emparejadas), no se sabe si está sincronizado")
+    tramo = (f"PEOR TRAMO {pt['mediana']:+.3f}s en t={pt['t']}s" if pt
+             else "PEOR TRAMO: sin tramo medible")
     print(f"{est} sincronismo: medio {med:.3f}s  p95 {p95:.3f}s  sesgo {sesgo:+.3f}s  "
-          f"PEOR TRAMO {pt['mediana']:+.3f}s en t={pt['t']}s  ({tarde} palabras >0,5 s tarde)")
+          f"{tramo}  ({tarde} palabras >0,5 s tarde)")
     if sesgo > 0:
         print(f"{AVISO} sesgo POSITIVO: el subtítulo va por detrás de la voz (se busca negativo)")
 
@@ -838,7 +847,15 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
     est_artefactos = AVISO if not pares_stems else OK
     print(f"{est_artefactos} artefactos: {len(pares_stems)} par(es) completos "
           f"(mp4 + título)" + ("  (nada que auditar)" if est_artefactos == AVISO else ""))
-    if huerfanos_titulo:
+    if huerfanos_titulo and stems is not None:
+        # Si el caller AFIRMA que estos stems son de esta corrida, un título sin
+        # su mp4 no puede ser "de otra corrida": es un short que se pidió y no
+        # se compuso. Eso bloquea.
+        msg = (f"{len(huerfanos_titulo)} short(s) de ESTA corrida con título pero "
+               f"SIN mp4 (no se compusieron): {', '.join(huerfanos_titulo)}")
+        print(f"{MAL} {msg}")
+        fallos.append(msg)
+    elif huerfanos_titulo:
         print(f"{AVISO} títulos huérfanos (sin su .mp4, de otra corrida): "
               f"{len(huerfanos_titulo)} -> {', '.join(huerfanos_titulo)}")
     if huerfanos_mp4:
@@ -908,10 +925,21 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
                if g in cola]
         if eco:
             mutilados.append((stem, eco[0]))
-    if medidos:
-        print(f"{OK} arranque medido sobre {medidos}/{len(titulos_f)} shorts")
-    if titulos_f:
+    if titulos_f and not medidos:
+        # Sin ni un short medido, `mutilados` está vacío POR NO HABER MIRADO. La
+        # línea de abajo decía `OK ... 0 narran un trozo repetido` y el veredicto
+        # salía verde: el mismo short defectuoso pasaba de FALLA a OK solo con
+        # que faltara su `.srt`.
+        print(f"{AVISO} arranque de shorts: NO se pudo medir en ninguno de los "
+              f"{len(titulos_f)} (falta su .srt/.ass, o el título es demasiado "
+              f"corto): NO se sabe si narran un trozo repetido de su título")
+    elif medidos:
         est = OK if not mutilados else MAL
+        if medidos < len(titulos_f):
+            print(f"{AVISO} arranque medido sobre {medidos}/{len(titulos_f)} shorts "
+                  f"-- los otros {len(titulos_f) - medidos} NO se comprobaron")
+        else:
+            print(f"{OK} arranque medido sobre {medidos}/{len(titulos_f)} shorts")
         print(f"{est} arranque de shorts: {len(mutilados)} narran un trozo repetido "
               f"de su propio título")
         for stem, g in mutilados[:3]:
@@ -921,6 +949,11 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
                           f"de su título")
 
     # sincronismo de una muestra de shorts (el gemelo que nadie mira)
+    # Se acumulan los que de VERDAD se midieron, no los que se pidieron: los
+    # `continue` de abajo (sin .ass, emparejado bajo) saltan shorts, y contar lo
+    # pedido hacía que la línea de cobertura dijera "2/2 medidos (todos)" con
+    # CERO medidos, justo debajo de dos avisos que decían lo contrario.
+    medidos_sync = []
     for mp4 in mp4s[:n_medir]:
         stem = os.path.splitext(os.path.basename(mp4))[0]
         ass = os.path.join(temp_dir, f"{stem}_subs.ass")
@@ -940,6 +973,7 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
         est = OK if pt and abs(pt["mediana"]) <= 0.35 else MAL
         detalle = f"  peor tramo {pt['mediana']:+.3f}s" if pt else " (sin tramo medible)"
         print(f"{est} {stem}: medio {med:.3f}s{detalle}")
+        medidos_sync.append(stem)   # aquí sí: el sincronismo se ha medido
         if est == MAL:
             fallos.append(f"{stem} desincronizado")
 
@@ -963,21 +997,33 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
     # menor que el número de pares deja el resto SIN verificar, y sin esta
     # línea el informe no lo dice en ningún sitio -- el silencio se lee como
     # "todo bien".
+    # Se cuenta lo MEDIDO (`medidos_sync`), no lo pedido: contar lo pedido hacía
+    # que esta misma línea dijera "2/2 shorts medidos (todos)" justo debajo de
+    # dos avisos de "NO se ha medido su sincronismo". La línea escrita para que
+    # "no medido" no se leyera como "sano" decía exactamente eso.
     n_pares = len(mp4s)
-    n_pedidos = max(0, min(n_medir, n_pares))
-    sin_medir = mp4s[n_pedidos:]
+    stems_todos = [os.path.splitext(os.path.basename(m))[0] for m in mp4s]
+    sin_medir = [s for s in stems_todos if s not in medidos_sync]
+    n_medidos = len(medidos_sync)
     if n_pares == 0:
         pass  # ya cubierto por "artefactos: 0 pares"
-    elif n_medir <= 0:
+    elif n_medidos == 0 and n_medir > 0:
+        # Se PIDIÓ medir y no se midió ni uno: eso es un fallo de medición, no
+        # una elección. Con `--shorts 0` (nadie lo pidió) basta el aviso.
+        msg = (f"se pidió medir el sincronismo de {min(n_medir, n_pares)} short(s) "
+               f"y NO se pudo medir ninguno (falta su .ass o emparejado bajo): "
+               f"no se sabe si están sincronizados")
+        print(f"{MAL} cobertura de sincronismo: {msg}")
+        fallos.append(msg)
+    elif n_medidos == 0:
         print(f"{AVISO} cobertura de sincronismo: 0/{n_pares} shorts medidos "
-              f"(--shorts 0 o no pedido) -- NINGÚN short se verificó, eso no es "
-              f"'sano', es 'sin comprobar'")
+              f"-- NINGÚN short se verificó (`--shorts 0`: nadie lo pidió). "
+              f"Eso no es 'sano', es 'sin comprobar'")
     elif sin_medir:
-        stems_sin_medir = [os.path.splitext(os.path.basename(m))[0] for m in sin_medir]
-        print(f"{AVISO} cobertura de sincronismo: {n_pedidos}/{n_pares} shorts medidos "
-              f"-- SIN medir ({len(sin_medir)}): {', '.join(stems_sin_medir)}")
+        print(f"{AVISO} cobertura de sincronismo: {n_medidos}/{n_pares} shorts medidos "
+              f"-- SIN medir ({len(sin_medir)}): {', '.join(sin_medir)}")
     else:
-        print(f"{OK} cobertura de sincronismo: {n_pedidos}/{n_pares} shorts medidos "
+        print(f"{OK} cobertura de sincronismo: {n_medidos}/{n_pares} shorts medidos "
               f"(todos)")
     return fallos
 
@@ -1026,8 +1072,14 @@ def main():
     args = ap.parse_args()
 
     solo = {s.strip() for s in args.stem.split(",")} if args.stem else None
-    solo_shorts = ({s.strip() for s in args.shorts_stems.split(",")}
-                   if args.shorts_stems else None)
+    # `is not None`, NO truthiness: con `--shorts-stems ""` —que es lo que produce
+    # `",".join(stems)` cuando la corrida no generó ningún short— la cadena vacía
+    # es falsy y el acotamiento se desactivaba EN SILENCIO, auditando el
+    # directorio entero como si nadie lo hubiera pedido.
+    solo_shorts = (
+        {s.strip() for s in args.shorts_stems.split(",") if s.strip()}
+        if args.shorts_stems is not None else None
+    )
 
     fallos = []
 

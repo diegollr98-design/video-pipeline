@@ -53,7 +53,9 @@ def _cuenta_palabras_reales(t):
     `_clean_speech_for_tts` no salte por un token de solo puntuación que la
     limpieza elimina legítimamente.
     """
-    return sum(1 for w in t.split() if re.search(r'\w', w, re.UNICODE))
+    # `[^\W_]`, no `\w`: `_` es `\w` en Python, así que un `___` suelto contaba
+    # como palabra y hacía saltar el invariante al limpiarlo.
+    return sum(1 for w in t.split() if re.search(r'[^\W_]', w, re.UNICODE))
 
 
 def _clean_speech_for_tts(text):
@@ -78,8 +80,17 @@ def _clean_speech_for_tts(text):
             cleaned.append("")
             continue
 
-        # Skip block headers
-        if re.match(r'^(BLOQUE|PARTE|SECCION|CONTINUACION|TITULO)\s*\d*', stripped, re.IGNORECASE):
+        # Skip block headers.
+        # ANCLADO: antes era `^(BLOQUE|PARTE|...)\s*\d*`, y `\s*\d*` casa con
+        # NADA, así que `re.match` aceptaba cualquier línea que EMPEZARA por esas
+        # letras y borraba el párrafo entero: "Bloqueé su número aquella misma
+        # noche..." y "Parte de mí quería perdonarle..." desaparecían de la
+        # narración. Y el invariante de abajo era ciego por construcción, porque
+        # esas palabras se suman a `palabras_saltadas`. Ahora una cabecera tiene
+        # que serlo de verdad: la palabra sola, o seguida de un número y/o de
+        # `:`/`-`, y nada más en la línea.
+        if re.match(r'^(BLOQUE|PARTE|SECCION|CONTINUACION|TITULO)\b\s*\d*\s*[:.\-–—]?\s*$',
+                    stripped, re.IGNORECASE):
             palabras_saltadas += _cuenta_palabras_reales(stripped)
             continue
 
@@ -179,9 +190,16 @@ def _clean_speech_for_tts(text):
     #
     # Calibrado sobre los 5 guiones reales en disco (16.896 palabras): delta 0 en
     # los 5. No es un umbral inventado.
+    # SOLO a la baja. Con `!=` esto abortaba también cuando el texto GANA una
+    # palabra —un em dash pegado entre dos (`padre—era`) se separa en dos, que es
+    # justo lo que arregla la línea del em dash de más arriba— y encima el
+    # mensaje decía "perdió narración" sobre un texto que no había perdido nada.
+    # Una palabra de más no es narración perdida; una de menos sí. Y el falso
+    # positivo no era barato: `main.py` llama a `take_chunk` ANTES del try de
+    # producción, así que abortar aquí se lleva el chunk de gameplay por delante.
     esperadas = _cuenta_palabras_reales(original) - palabras_saltadas
     obtenidas = _cuenta_palabras_reales(text)
-    if obtenidas != esperadas:
+    if obtenidas < esperadas:
         raise RuntimeError(
             f"La limpieza para TTS perdió narración: {esperadas} palabras "
             f"esperadas y {obtenidas} obtenidas ({esperadas - obtenidas:+d}). "
