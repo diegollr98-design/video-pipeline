@@ -18,6 +18,9 @@ Cada comprobación existe porque un defecto REAL se coló por ahí:
 Uso:
   python scripts/audit_run.py                    # audita output/ y shorts_tiktok/
   python scripts/audit_run.py --shorts 3         # mide el sincronismo de 3 shorts
+  python scripts/audit_run.py --shorts-stems short_005,short_006  # [GATE-05]
+      # acota TODA la auditoría de shorts (pares, huérfanos, variedad,
+      # arranque, sincronismo) a esos stems, en vez del directorio entero
 """
 import argparse
 import glob
@@ -571,19 +574,84 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
     return fallos
 
 
-def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
+def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small", stems=None):
+    """Audita `shorts_dir` -- o, si se pasa `stems`, SOLO esa corrida.
+
+    [GATE-05]: por defecto este auditor mira el DIRECTORIO, que acumula
+    artefactos de corridas anteriores. Eso produce dos fallos de medición
+    distintos y opuestos, medidos en la corrida de las 17:50-18:05 de hoy:
+
+    1. FALSO POSITIVO: un `<stem>_title.txt` cuyo `<stem>.mp4` ya no existe
+       (huérfano de una corrida previa) se contaba como "falta el mp4 de
+       ESTA corrida". No es lo mismo: nadie va a publicar ese título sin
+       vídeo, pero tampoco es un defecto de la corrida de hoy.
+    2. FALSO NEGATIVO por contaminación: "títulos únicos" y "aperturas"
+       (variedad de los shorts) se calculaban sobre la MEZCLA de huérfanos +
+       pares nuevos + pares de otra corrida vieja, así que no miden la
+       variedad de ningún conjunto real.
+
+    Un PAR completo es un stem con `<stem>.mp4` Y `<stem>_title.txt` a la
+    vez. Solo los pares completos entran en las métricas de variedad, en el
+    check de arranque mutilado y en la medición de sincronismo.
+    - `_title.txt` SIN su `.mp4`: huérfano. AVISO informativo, nombrado.
+      NUNCA entra en `fallos` -- no bloquea nada, porque no hay vídeo que
+      publicar con ese título de todos modos.
+    - `.mp4` SIN su `_title.txt`: sigue siendo un fallo real -- un short se
+      compuso y no tiene título para publicar. Sigue bloqueando.
+
+    `stems`, si se pasa (p.ej. los stems que acaba de producir ESTA
+    corrida), restringe TODO -- pares, huérfanos, métricas, arranque y
+    sincronismo -- a esos stems, para que lo que hubiera antes en el
+    directorio no contamine la medida.
+    """
     print(f"\n=== SHORTS: {shorts_dir} ===")
     fallos = []
-    titulos_f = sorted(glob.glob(os.path.join(shorts_dir, "*_title.txt")))
-    mp4s = sorted(glob.glob(os.path.join(shorts_dir, "*.mp4")))
-    # [GATE-02]: "0 mp4 y 0 títulos" NO es lo mismo que "medí y están todos
-    # bien" — es "no hay nada que auditar aquí". Antes salía en OK, idéntico
-    # a la nota perfecta de un directorio con shorts sanos.
-    est_artefactos = AVISO if not mp4s and not titulos_f else OK
-    print(f"{est_artefactos} artefactos: {len(mp4s)} mp4 y {len(titulos_f)} títulos"
-          + ("  (nada que auditar en este directorio)" if est_artefactos == AVISO else ""))
-    if len(mp4s) != len(titulos_f):
-        fallos.append("faltan artefactos de shorts")
+    titulos_f_todos = sorted(glob.glob(os.path.join(shorts_dir, "*_title.txt")))
+    mp4s_todos = sorted(glob.glob(os.path.join(shorts_dir, "*.mp4")))
+
+    def _stem_de(path, sufijo):
+        return os.path.basename(path)[: -len(sufijo)]
+
+    titulos_por_stem = {_stem_de(f, "_title.txt"): f for f in titulos_f_todos}
+    mp4_por_stem = {_stem_de(f, ".mp4"): f for f in mp4s_todos}
+
+    if stems is not None:
+        print(f"       acotado a --shorts-stems: {len(stems)} stem(s) pedido(s)")
+        # Simétrico al `--stem` de vídeos: un stem pedido que no aparece NI
+        # como título NI como mp4 no es un huérfano de otra corrida, es que
+        # ese short no se produjo. Eso bloquea (MAL), no es informativo.
+        no_encontrados = stems - (set(titulos_por_stem) | set(mp4_por_stem))
+        if no_encontrados:
+            msg = (f"--shorts-stems pidió {len(no_encontrados)} stem(s) que no "
+                  f"existen en {shorts_dir}: {', '.join(sorted(no_encontrados))}")
+            print(f"{MAL} {msg}")
+            fallos.append(msg)
+        titulos_por_stem = {s: f for s, f in titulos_por_stem.items() if s in stems}
+        mp4_por_stem = {s: f for s, f in mp4_por_stem.items() if s in stems}
+
+    stems_titulo, stems_mp4 = set(titulos_por_stem), set(mp4_por_stem)
+    pares_stems = sorted(stems_titulo & stems_mp4)
+    huerfanos_titulo = sorted(stems_titulo - stems_mp4)
+    huerfanos_mp4 = sorted(stems_mp4 - stems_titulo)
+
+    titulos_f = [titulos_por_stem[s] for s in pares_stems]
+    mp4s = [mp4_por_stem[s] for s in pares_stems]
+
+    # [GATE-02]: "0 pares" NO es lo mismo que "medí y están todos bien" — es
+    # "no hay nada que auditar aquí". Antes salía en OK, idéntico a la nota
+    # perfecta de un directorio con shorts sanos.
+    est_artefactos = AVISO if not pares_stems else OK
+    print(f"{est_artefactos} artefactos: {len(pares_stems)} par(es) completos "
+          f"(mp4 + título)" + ("  (nada que auditar)" if est_artefactos == AVISO else ""))
+    if huerfanos_titulo:
+        print(f"{AVISO} títulos huérfanos (sin su .mp4, de otra corrida): "
+              f"{len(huerfanos_titulo)} -> {', '.join(huerfanos_titulo)}")
+    if huerfanos_mp4:
+        # Este SÍ bloquea: un .mp4 compuesto sin título no tiene qué publicar.
+        print(f"{MAL} mp4 SIN título (nada que publicar): "
+              f"{len(huerfanos_mp4)} -> {', '.join(huerfanos_mp4)}")
+        fallos.append(f"{len(huerfanos_mp4)} short(s) compuesto(s) sin título: "
+                      f"{', '.join(huerfanos_mp4)}")
 
     titulos = [open(f, encoding="utf-8").read().strip() for f in titulos_f]
     if titulos:
@@ -694,6 +762,28 @@ def audita_shorts(shorts_dir, temp_dir, n_medir=0, model="small"):
         print(f"{est} {stem}: voz SIN subtítulo {total:.2f}s en {len(huecos)} tramo(s)")
         if est == MAL:
             fallos.append(f"{stem}: {total:.1f}s de voz sin subtítulo")
+
+    # --- cobertura del sincronismo: cuántos de los pares se midieron.
+    # "No medido" NO puede leerse como "sano" (§16): `--shorts N` con N
+    # menor que el número de pares deja el resto SIN verificar, y sin esta
+    # línea el informe no lo dice en ningún sitio -- el silencio se lee como
+    # "todo bien".
+    n_pares = len(mp4s)
+    n_pedidos = max(0, min(n_medir, n_pares))
+    sin_medir = mp4s[n_pedidos:]
+    if n_pares == 0:
+        pass  # ya cubierto por "artefactos: 0 pares"
+    elif n_medir <= 0:
+        print(f"{AVISO} cobertura de sincronismo: 0/{n_pares} shorts medidos "
+              f"(--shorts 0 o no pedido) -- NINGÚN short se verificó, eso no es "
+              f"'sano', es 'sin comprobar'")
+    elif sin_medir:
+        stems_sin_medir = [os.path.splitext(os.path.basename(m))[0] for m in sin_medir]
+        print(f"{AVISO} cobertura de sincronismo: {n_pedidos}/{n_pares} shorts medidos "
+              f"-- SIN medir ({len(sin_medir)}): {', '.join(stems_sin_medir)}")
+    else:
+        print(f"{OK} cobertura de sincronismo: {n_pedidos}/{n_pares} shorts medidos "
+              f"(todos)")
     return fallos
 
 
@@ -732,9 +822,17 @@ def main():
                                    "(ej: video_007,video_008). Sin esto audita todos "
                                    "los de output/, que en produccion es re-transcribir "
                                    "el catalogo entero con whisper")
+    ap.add_argument("--shorts-stems", help="[GATE-05] auditar SOLO estos shorts, "
+                                   "separados por comas (ej: short_005,short_006). Sin "
+                                   "esto audita TODO --shorts-dir, que acumula pares y "
+                                   "huerfanos de corridas anteriores. main.py todavia NO "
+                                   "pasa este flag: pendiente cablearlo con los stems que "
+                                   "acaba de producir la corrida (ver informe)")
     args = ap.parse_args()
 
     solo = {s.strip() for s in args.stem.split(",")} if args.stem else None
+    solo_shorts = ({s.strip() for s in args.shorts_stems.split(",")}
+                   if args.shorts_stems else None)
 
     fallos = []
 
@@ -792,7 +890,8 @@ def main():
     # fuera del bucle sin protección, así que una excepción en un solo vídeo
     # se llevaba por delante la auditoría ENTERA de shorts.
     try:
-        fallos += audita_shorts(args.shorts_dir, args.temp, args.shorts, args.model)
+        fallos += audita_shorts(args.shorts_dir, args.temp, args.shorts, args.model,
+                                stems=solo_shorts)
     except Exception as e:
         traceback.print_exc()
         msg = f"excepción auditando shorts en {args.shorts_dir}: {type(e).__name__}: {e}"
