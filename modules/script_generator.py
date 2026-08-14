@@ -831,13 +831,40 @@ def _ensure_title_at_start(title, story):
     return title_sentence + " " + story.strip()
 
 
-def _generate_first_block(target_words, style, config):
-    """Generate title + first block (~2000 words): hook + context + start of escalation."""
+def _generate_first_block(target_words, style, config, cerrar_historia=False):
+    """Generate title + first block: hook + context + start of escalation.
+
+    `cerrar_historia=True` (usada cuando `target_words` cabe en un solo bloque,
+    ver `_UN_SOLO_BLOQUE_MAX_PALABRAS`) pide la historia COMPLETA —con
+    desenlace incluido— en esta misma llamada, en vez de "corta en un punto de
+    tensión": el prompt de abajo es justo el contrario del que se usa cuando SÍ
+    va a haber más bloques después.
+    """
     template = _load_prompt_template(config["paths"]["prompt_template"])
     prompt = template.format(target_words=target_words, style=style)
 
-    # Add instruction to generate first block
-    prompt += f"""
+    if cerrar_historia:
+        # Historia completa en UNA sola llamada. Antes, todo objetivo pasaba
+        # por aquí pidiendo un bloque de "gancho, no termines" de tamaño FIJO
+        # (WORDS_PER_BLOCK=2000) sin importar `target_words`, y para un
+        # objetivo pequeño (p.ej. 623) el sobrante lo tiraba
+        # `_truncate_to_words` (medido: 48-84% del cuerpo descartado). Con
+        # `target_words <= WORDS_PER_BLOCK` no hace falta partir en bloques.
+        prompt += f"""
+
+IMPORTANTE: Esta historia debe tener aproximadamente {target_words} palabras en TOTAL, y la vas a escribir COMPLETA en esta única respuesta: desde el gancho hasta el desenlace. NO habrá un mensaje siguiente.
+
+REGLA CRÍTICA: La primera frase del speech DEBE SER exactamente el texto del título (sin los "..."). Es la frase que aparecerá en la miniatura y la intro del video. Ejemplo: si el título es "Mi Jefe Me Humilló En La Cena De Empresa...", el speech debe empezar: "Mi jefe me humilló en la cena de empresa." y luego continuar desarrollando la escena con detalle.
+
+Incluye TODO en esta misma respuesta: el hook inicial (escena del título con detalle), el contexto del pasado, la escalada del abuso, el plan y su ejecución (confrontaciones, pruebas, acciones legales), las consecuencias para los abusadores (pierden dinero, reputación, relaciones), y un epílogo final (meses/años después, cómo está el protagonista ahora, reflexión final).
+
+CIERRA la historia POR COMPLETO. NO la dejes abierta ni "a punto de continuar": es el ÚNICO bloque.
+Escribe aproximadamente {target_words} palabras en total. El desenlace es tan importante como el resto: no lo sacrifiques por espacio.
+
+RECORDATORIO: Escribe en párrafos largos y fluidos. NO fragmentes en líneas cortas. NO uses comillas ni guiones de diálogo. Integra todo en narración continua."""
+    else:
+        # Add instruction to generate first block
+        prompt += f"""
 
 IMPORTANTE: Esta historia debe tener {target_words} palabras en TOTAL, pero la vas a generar por partes.
 Ahora genera SOLO el TÍTULO + las primeras ~{WORDS_PER_BLOCK} palabras.
@@ -1078,10 +1105,80 @@ def _limpiar_bloque(texto, etiqueta):
     return limpio
 
 
-def generate_story(target_words, style, config):
-    """Generate a complete story in blocks, concatenating until target_words is reached."""
+# --- Historia completa en una sola llamada [TRUNCA-02] -----------------------
+# Antes, CUALQUIER objetivo (incluidos los 623 del fixture de /eval y los 2900
+# de un vídeo corto) entraba por `_generate_first_block` pidiendo un bloque de
+# tamaño FIJO (WORDS_PER_BLOCK=2000, "NO termines, corta en un punto de
+# tensión") sin mirar `target_words`, y lo que sobraba lo tiraba
+# `_truncate_to_words`. Medido con un doble COMPLIANT (escribe justo lo que
+# cada instrucción pide) sobre el código de antes de este cambio: objetivo 623
+# -> bloque 1 pide 2000, el bucle nunca entra (2000 ya supera el 85% de 623) y
+# el cierre pide 500 más -> 2500 pedidas contra 623, y el guardia [TRUNCA-01]
+# ABORTA el vídeo entero (mutilaría el 76% del guion, por encima de su propio
+# 50% máximo) — con `_TRUNCADO_CUERPO_MAX_FRAC` activo el fixture ya no podía
+# ni siquiera terminar. Con 2900 el reparto natural del bucle (2000 + 868 de
+# cierre escalado) ya se acerca al objetivo, así que ahí el defecto es menor.
+#
+# Si `target_words` cabe en una sola llamada (el propio código ya sabe que
+# WORDS_PER_BLOCK es lo que el modelo escribe con fiabilidad en una llamada:
+# es la constante que fija cuánto pide cada bloque en el camino multi-bloque),
+# no hace falta partir nada: se pide la historia COMPLETA con desenlace en una
+# única petición. Por encima de ese umbral, el camino multi-bloque queda
+# EXACTAMENTE igual que antes (mismo prompt, mismo bucle): con
+# `target_words > WORDS_PER_BLOCK` este umbral no cambia su plan de bloques.
+_UN_SOLO_BLOQUE_MAX_PALABRAS = WORDS_PER_BLOCK
 
-    num_blocks = max(2, (target_words + WORDS_PER_BLOCK - 1) // WORDS_PER_BLOCK)
+
+def _generar_historia_un_bloque(target_words, style, config):
+    """`target_words` cabe en una sola llamada: pide la historia COMPLETA.
+
+    Devuelve `(title, story, cierre_escrito, word_count)`, mismo contrato que
+    `_generar_historia_multi_bloque`, para que `generate_story` no necesite
+    saber por qué camino pasó.
+    """
+    logger.info(
+        f"Historia de {target_words} palabras cabe en un solo bloque "
+        f"(<= {_UN_SOLO_BLOQUE_MAX_PALABRAS}): pidiendo la historia COMPLETA "
+        f"en una sola llamada, sin partir en bloques"
+    )
+    title, story = _generate_first_block(target_words, style, config, cerrar_historia=True)
+    story = _limpiar_bloque(story, "Bloque único")
+    story = _ensure_title_at_start(title, story)
+
+    word_count = len(story.split())
+    logger.info(f"Bloque único: {word_count} palabras, titulo: {title[:60]}...")
+
+    # Mismo umbral (0.85) que usa el camino multi-bloque para decidir si un
+    # bloque cerró la historia de verdad: si pese a pedírsele la historia
+    # COMPLETA con desenlace se queda muy por debajo del objetivo, lo más
+    # probable es que el modelo se haya cortado a mitad (el mismo patrón que
+    # [CIERRE-01] documentó en el camino multi-bloque). Se trata igual: NO se
+    # asciende a "cerrada" solo porque se pidió — hace falta que además haya
+    # llegado cerca del objetivo. `generate_story` pedirá el desenlace aparte
+    # si esto queda en `False`.
+    cierre_escrito = word_count >= target_words * 0.85
+    if not cierre_escrito:
+        logger.warning(
+            f"Bloque único: {word_count} palabras, por debajo del 85% del "
+            f"objetivo ({target_words}) pese a habérsele pedido la historia "
+            f"COMPLETA con desenlace incluido. Se trata como si el cierre NO "
+            f"se hubiera escrito: se pedirá aparte."
+        )
+    return title, story, cierre_escrito, word_count
+
+
+def _generar_historia_multi_bloque(target_words, style, config):
+    """`target_words` no cabe en una sola llamada: bloque 1 + continuaciones.
+
+    Comportamiento SIN CAMBIOS respecto al código anterior a [TRUNCA-02] (es
+    literalmente el mismo prompt y el mismo bucle) — lo único que cambia es
+    que ahora solo se llega aquí cuando `target_words > WORDS_PER_BLOCK`, así
+    que el suelo `max(2, ...)` de `num_blocks` es redundante (ceil ya da >=2)
+    y se deja en `max(1, ...)` por defensa, no porque cambie nada.
+
+    Devuelve `(title, story, cierre_escrito, word_count)`.
+    """
+    num_blocks = max(1, (target_words + WORDS_PER_BLOCK - 1) // WORDS_PER_BLOCK)
     logger.info(f"Generando historia de {target_words} palabras en ~{num_blocks} bloques")
 
     # Block 1: Title + hook + context
@@ -1135,6 +1232,27 @@ def generate_story(target_words, style, config):
 
         if is_final:
             break
+
+    return title, story, cierre_escrito, word_count
+
+
+def generate_story(target_words, style, config):
+    """Generate a complete story, concatenating blocks until target_words is reached.
+
+    Dos caminos, elegidos por tamaño (ver `_UN_SOLO_BLOQUE_MAX_PALABRAS`):
+    - `target_words` cabe en una llamada -> `_generar_historia_un_bloque`.
+    - si no -> `_generar_historia_multi_bloque` (comportamiento sin cambios).
+    Los dos devuelven el mismo contrato, así que la garantía de desenlace y la
+    limpieza de cola de abajo son compartidas por los dos caminos.
+    """
+    if target_words <= _UN_SOLO_BLOQUE_MAX_PALABRAS:
+        title, story, cierre_escrito, word_count = _generar_historia_un_bloque(
+            target_words, style, config
+        )
+    else:
+        title, story, cierre_escrito, word_count = _generar_historia_multi_bloque(
+            target_words, style, config
+        )
 
     # GARANTÍA DE DESENLACE (§17). Sin este `if`, una historia que se pasa de
     # largo en un bloque de continuación sale del bucle a mitad de escena y el
