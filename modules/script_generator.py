@@ -27,6 +27,12 @@ _CIERRE_MIN_PALABRAS = 120   # por debajo de esto no es un desenlace, es un rest
 # esto de la historia YA CONCATENADA, no está quitando una anotación: está
 # borrando narración (ver `_limpiar_bloque`).
 _META_CORTE_MAX_FRAC = 0.15
+# Tope POR BLOQUE (`_limpiar_bloque`). Va por fracción del bloque porque lo que
+# distingue metadato de narración es la POSICIÓN del marcador: el corte llega
+# hasta el final, así que uno en la cola se lleva poco y uno enterrado en el
+# cuerpo se lleva casi todo. Calibrado contra el caso REAL de [BASURA-03]
+# (`video_004`: 132 de 604 palabras = 22%), con margen.
+_META_CORTE_MAX_FRAC_BLOQUE = 0.35
 _CIERRE_PRESERVADO = 600     # palabras finales que el truncado NUNCA descarta
 
 
@@ -675,6 +681,10 @@ _APERTURA_CHARS = " \t\n\r"
 # acaba la frase que quedó descabezada, y medida real: 24 palabras (~140
 # caracteres) en `short_008`.
 _FRAGMENTO_MAX_CHARS = 400
+# Tope duro en PALABRAS de lo que se puede descartar. Los fragmentos reales
+# medidos son de 11 y 24; por encima de esto ya no es la cola del título, es
+# narración nueva, y borrarla cuesta más que dejar una frase coja.
+_FRAGMENTO_MAX_PALABRAS = 28
 
 
 def _descartar_fragmento_inicial(story):
@@ -703,8 +713,11 @@ def _descartar_fragmento_inicial(story):
     if not limpio:
         return story
 
+    # Minúscula O dígito. `isalpha()` es False para una cifra, así que
+    # "400 euros al mes sin decírmelo, lo descubrí..." —una apertura
+    # perfectamente normal del género, y descabezada igual— no disparaba.
     primera = limpio[0]
-    if not (primera.isalpha() and primera.islower()):
+    if not ((primera.isalpha() and primera.islower()) or primera.isdigit()):
         return story
 
     corte = _fin_de_frase(limpio, limite=_FRAGMENTO_MAX_CHARS)
@@ -718,6 +731,24 @@ def _descartar_fragmento_inicial(story):
 
     frag = limpio[:corte].strip()
     resto = limpio[corte:].strip()
+
+    # TOPE DE PALABRAS. El solapamiento que se quitó antes es un match por
+    # PREFIJO que rompe en la primera palabra distinta, así que en cuanto la
+    # frase del modelo diverge del título lo que queda detrás YA NO son "las
+    # palabras que el título dice": es narración nueva. Sin tope, esto llegó a
+    # borrar el 41% del cuerpo de un short (163 -> 96 palabras), por encima del
+    # mínimo de 80, así que el short se publicaba igual.
+    # Los fragmentos reales medidos son de 11 y 24 palabras; el techo anterior
+    # (`_FRAGMENTO_MAX_CHARS = 400` ~ 66 palabras) estaba a 2,7x de eso.
+    if len(frag.split()) > _FRAGMENTO_MAX_PALABRAS:
+        logger.warning(
+            f"Fragmento descabezado de {len(frag.split())} palabras (máximo "
+            f"{_FRAGMENTO_MAX_PALABRAS}): demasiado largo para ser la cola del "
+            f"título, se deja intacto en vez de borrar narración. Empieza: "
+            f"{frag[:70]!r}"
+        )
+        return story
+
     if not resto:
         logger.warning(
             f"Tras quitar el prefijo del titulo quedaria solo un fragmento "
@@ -1098,9 +1129,33 @@ def _limpiar_bloque(texto, etiqueta):
     """
     limpio, meta = _strip_trailing_metadata(texto)
     if meta:
-        borradas = len(texto.split()) - len(limpio.split())
+        antes = len(texto.split())
+        borradas = antes - len(limpio.split())
+        # TOPE DENTRO DE LA FUNCIÓN. Antes esto no tenía ninguno: el defecto no
+        # se había cerrado, se había movido de "corta hasta el final de la
+        # concatenación" a "corta hasta el final del BLOQUE" — hasta 2000
+        # palabras, en silencio. Un marcador a mitad del bloque 1 borraba 826
+        # palabras (31% del guion) y no abortaba nada.
+        #
+        # El umbral es por FRACCIÓN DEL BLOQUE porque lo que distingue un
+        # metadato de la narración es su POSICIÓN: el corte va del marcador al
+        # final, así que un marcador en la cola se lleva poco y uno enterrado en
+        # el cuerpo se lleva casi todo. Calibrado contra el caso REAL de
+        # [BASURA-03] (`video_004`: 132 de 604 palabras = 22%), no contra un
+        # número inventado.
+        if borradas > antes * _META_CORTE_MAX_FRAC_BLOQUE:
+            raise RuntimeError(
+                f"{etiqueta}: la limpieza de metadato se llevaría {borradas} de "
+                f"{antes} palabras ({borradas / antes:.0%}, máximo "
+                f"{_META_CORTE_MAX_FRAC_BLOQUE:.0%}). Eso no es una auto-anotación "
+                f"de cola, es narración: el marcador está enterrado en el cuerpo. "
+                f"Se aborta en vez de publicar el bloque mutilado. Motivo: {meta!r}"
+            )
+        # `meta` recortado: este warning llegó a imprimir 826 palabras de
+        # narración dentro, que es el mismo anti-patrón que critica el docstring.
         logger.warning(
-            f"{etiqueta}: quitado metadato del modelo ({borradas} palabras): {meta!r}"
+            f"{etiqueta}: quitado metadato del modelo ({borradas} palabras): "
+            f"{meta[:120]!r}{'...' if len(meta) > 120 else ''}"
         )
     return limpio
 
@@ -1295,11 +1350,21 @@ def generate_story(target_words, style, config):
     story, meta = _strip_trailing_metadata(story)
     if meta:
         borradas = antes_meta - len(story.split())
-        if borradas > antes_meta * _META_CORTE_MAX_FRAC:
+        # Umbral ATADO A LO QUE PROTEGE, no una fracción del total. Con el 15%
+        # anterior, un vídeo de 30 min (~5600 palabras) toleraba borrar **840**,
+        # cuando el bloque de desenlace entero son `_CIERRE_PALABRAS` = 500 y el
+        # mínimo aceptable son 120: el guardia escrito para impedir que se borre
+        # el final permitía borrarlo 1,7 veces. Reproducido: 621 palabras
+        # borradas = 11,7% -> no abortaba -> guion publicado SIN desenlace.
+        # Ahora: cualquier corte del tamaño de un desenlace mínimo es narración.
+        # A estas alturas los bloques ya se limpiaron uno a uno, así que lo que
+        # aparezca aquí es una forma NUEVA y toca ser conservador.
+        if borradas >= _CIERRE_MIN_PALABRAS:
             raise RuntimeError(
                 f"Limpieza de metadato sobre el guion completo: el corte se lleva "
                 f"{borradas} de {antes_meta} palabras "
-                f"({borradas / antes_meta:.0%}, máximo {_META_CORTE_MAX_FRAC:.0%}). "
+                f"({borradas / antes_meta:.0%}; un desenlace mínimo son "
+                f"{_CIERRE_MIN_PALABRAS}). "
                 f"Eso no es una auto-anotación de cola, es narración — probablemente "
                 f"el desenlace. Se aborta el vídeo en vez de publicarlo a medias. "
                 f"Motivo: {meta!r}"
