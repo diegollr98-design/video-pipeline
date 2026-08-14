@@ -14,7 +14,7 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
-## v0.8 — 2026-08-13 — El alineador repartía sobre la ventana entera de edge-tts 🔶
+## v0.8 — 2026-08-13/14 — El alineador repartía sobre la ventana entera de edge-tts ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_alineador_ventana_aplastada.md`.
 La **causa raíz del SEED quedó CONFIRMADA cuatro veces** (el agente ciego llegó a la misma línea sin
 verlo), pero el panel tumbó **3 de sus 5 criterios de aceptación** y la receta del tercer corpus.
@@ -39,9 +39,15 @@ internas aplanadas) y el escalar solo cubría uno; (c) **el mapeo afín quedó r
 (+7,6 s): el ritmo crudo de una ventana aplastada es basura, conservarlo conserva el error; (d) un
 agente reconstruyó un corpus "histórico" **importando el módulo en caliente** con el fix de hoy
 aplicado, y escribió esa conclusión falsa dentro del propio instrumento [INSTR-06].
-**Pendiente:** **`/eval` + `output-audit` NO se han corrido** (el pipeline estaba ocupado; decisión de
-Diego: cerrar con banco offline y dejar el gate en cola) — **el cambio NO está cerrado del todo**. No
-hay vídeo nuevo. Dentro de la ventana, `|err| max` queda en **0,443 s** contra el objetivo de 0,30 y
+**Gate (corrido después, 14-ago 10:39-10:57, ~7 peticiones + 3 reintentos):** `/eval` completo con
+shorts sobre `video_005` → **PASA**. Contra el baseline del 12-ago: media **0,0877 → 0,075**, máximo
+**7,52 → 0,390**, peor tramo −0,13 → **−0,100**, pausas fuera de puntuación **6 → 4**, sesgo −0,048
+(delante, correcto), cobertura 99,3%, 0 palabras >0,5 s tarde. `output-audit`: **sin defectos
+MEDIBLES**, con `voz SIN subtítulo 0,00 s` (el eje de riesgo del fix) y `auto-anotación en la cola:
+ninguna` (el guardia de [BASURA-03] vivo en generación fresca). ⚠️ **Pero la corrida NO ejerció la
+rama arreglada**: los 5 anclajes dan `0 repartidas sobre los tramos de voz medidos`. El gate prueba
+**no-regresión**, no el fix; la prueba de [ANCLA-06] vive en el banco offline. Es [GATE-03] otra vez.
+**Pendiente:** No hay producción larga nueva. Dentro de la ventana, `|err| max` queda en **0,443 s** contra el objetivo de 0,30 y
 la mediana en +0,119 contra +0,10: no se ha tuneado la constante contra el propio instrumento
 ([SYNC-01]), se declara. La ventana pasa de 0,00 a **0,39 s** de voz sin subtítulo. El corpus del
 10-ago **no es evaluable** para este fix (no se conservó su audio), y `data/evidence/` está
