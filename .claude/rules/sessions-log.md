@@ -44,12 +44,33 @@ corregido esa frase en B y C y se dejó la D— pero **se volvió cierto a media
 el árbol de trabajo, así que la verificación hay que repetirla, no heredarla; (c) un informe de
 subagente atribuyó el arreglo al `else` nuevo del truncado, y el A/B demostró que ese `else` es casi
 inalcanzable: lo que salva el caso es la re-validación de longitud.
-**Pendiente:** **`/eval` + `output-audit` NO se han corrido sobre estos cambios** (el árbol lo tiene
-el track C y `main.py` sigue prohibido) — el cierre se apoya en A/B offline sobre corpus reales, que
-es lo que [GATE-03] prescribe, pero **no sustituye al gate**. Cambia la **huella del auditor**
-(`ecb603ceb50f` → `c5baf68b73c7`): todos los veredictos caducan y hay que re-auditar antes de subir.
-[DRYRUN-01] sigue VIVO y destruye gameplay: `--dry-run` consume y borra el pool. Los commits de este
-track están en `feat/competencia` (historia lineal), no en `fix/alineador`.
+**Cierre (misma sesión, tras liberarse el árbol):** se corrió el `/eval` COMPLETO con shorts
+(`video_006`, 6 peticiones, 0 reintentos) y el `output-audit`. Sincronismo **mejor que el baseline** en
+todo salvo el máximo (medio 0,0749 → **0,0474**; p95 0,15 → **0,12**; sesgo −0,048 → **−0,016**; pausas
+fuera de puntuación 4 → **1**; máximo 0,39 → 0,46), geometría correcta en los dos formatos, 28 de 28
+silencios acústicos en puntuación, intro sin solape, y **guion 614 → audio 614 → subtítulos 586+28: no
+se pierde una palabra**. El máximo NO es atribuible a este track: se verificó que
+`_clean_speech_for_tts` produce salida **byte a byte idéntica a HEAD** sobre ese guion, así que el
+texto que llega al alineador es el mismo ([GATE-03]: el fixture genera historia nueva cada corrida).
+**Pero el `output-audit` tumbó la salida**: **[TRUNC-01]** el truncado descartó 2032 palabras (frases
+9-48 de 52, el 77% del cuerpo) y las tres entidades que el TÍTULO promete —que van a la miniatura y a
+la intro— aparecen **0 veces** en el cuerpo narrado; **[TITULO-03]** 2 de los 4 shorts narraban una
+frase descabezada en el segundo 3; **[SHORTDUR-01]** los shorts duran 34-41 s contra los 60-90 s de la
+spec, con `config.yaml` de producción idéntico; **[GATE-05]** el auditor medía el DIRECTORIO y cantó un
+fallo inexistente mientras daba en verde los dos reales. **Arreglados [TITULO-03] y [GATE-05]** con A/B
+sobre artefactos reales (los 2 shorts rotos pasan a mayúscula, los 2 sanos byte a byte idénticos; el
+falso positivo del gate desaparece y los huérfanos se nombran). **[TRUNC-01] y [SHORTDUR-01] siguen
+ABIERTOS.**
+**Pendiente:** **[TRUNC-01] es el más grave y sigue abierto**: mientras el modelo sobregenere (1392
+palabras para un objetivo de 623), el truncado seguirá cortando el cuerpo y el vídeo prometerá en la
+miniatura un suceso que no narra — y el gate no lo ve, porque comprueba que el bloque de desenlace
+EXISTE, no que la narración sea continua. **[SHORTDUR-01]** necesita que Diego decida qué cifra vale
+(34-41 s reales contra 60-90 s de la spec). **[DRYRUN-01]** sigue VIVO y destruye gameplay: `--dry-run`
+consume y borra el pool; son ~2 líneas, pero `main.py` es de otro track. Igual que la línea que pasaría
+`--shorts-stems` al auditor. Cambia la **huella del auditor** (`ecb603ceb50f` → `c5baf68b73c7`): todos
+los veredictos caducan y hay que re-auditar antes de subir. **No publicar `video_006`** ni
+`short_006`/`short_008`. Los commits de este track están en `feat/competencia` (historia lineal), no en
+`fix/alineador`.
 
 ## v0.8 — 2026-08-13/14 — El alineador repartía sobre la ventana entera de edge-tts ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_alineador_ventana_aplastada.md`.
