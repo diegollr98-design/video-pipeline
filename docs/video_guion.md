@@ -1,26 +1,74 @@
-# Guión — Recorrido del dashboard (vídeo hero del portfolio)
+# Guion — Recorrido de YOUTUBE PIPELINE (vídeo de `#recorrido` del portfolio)
 
-> Pieza central de `#recorrido` en `Portafolio/YOUTUBE-PIPELINE.html`. **Formato:** voz en off sobre
-> screen-recording del dashboard real (`streamlit run dashboard.py`), **sin talking-head**.
-> **Idiomas:** ES + EN sobre la **misma** grabación (dos locuciones o subtítulos).
-> **Tono:** honesto, preciso, sin hype — la voz del portfolio. El límite reconocido (la subida a
-> YouTube aún no existe) no se esconde: dicho de frente, refuerza todo lo demás.
+> Pieza central del slot `#recorrido` en `PORTAFOLIO/YOUTUBE-PIPELINE.html`. **Formato:** voz en off
+> sobre screen-recording del **dashboard real** (`streamlit run dashboard.py` / skill `/run`),
+> **sin talking-head**. **Idiomas:** ES + EN sobre la **misma** grabación (dos locuciones o subtítulos
+> ES/EN, igual que los guiones de pumpfun/ecxm-ops/resellermaster/escoltaelite). **Tono:** honesto,
+> preciso, sin hype — la voz del portfolio. Aquí la tesis ("un sistema autónomo, y las medidas que le
+> impiden publicar basura") no se lee: se **ve** ocurriendo.
 >
-> **Enfoque:** este NO re-narra el HTML. **Recorre las 7 pestañas reales del dashboard** y, dentro de
-> 📡 Progreso, **enseña el pipeline entero corriendo de verdad** — ingesta → historia → voz →
+> **Enfoque:** NO re-narra el HTML. **Recorre las 7 pestañas reales** del dashboard en el orden del
+> viaje del producto (Roadmap → Estado → Operar → Progreso → Resultados → Competencia → Config) y,
+> dentro de 📡 Progreso, **enseña el pipeline entero corriendo de verdad** — ingesta → historia → voz →
 > alineación → composición → shorts. Es "el sistema en marcha", no diapositivas.
 >
-> **Duración:** tour completo ≈ **5:20**. Para un hero más corto, graba/monta solo las filas ★
-> (≈ **3:00**); las filas ○ son el tour extendido. Los tiempos son del **tour completo**.
+> **Duración:** tour completo ≈ **5:30**. Para un hero más corto, graba/monta solo las filas ★
+> (≈ **3:10**, sumando la duración de esos beats); las filas ○ son el tour extendido. Los tiempos de la
+> columna `t` son del **tour completo**.
 >
-> **Regla de honestidad (marca del proyecto):** cada cifra dicha está verificada contra la fuente
-> (ver §Cifras verificadas). Cero inventos. Si al grabar una cifra no cuadra con lo que muestra la
-> pantalla en ese instante, **manda la pantalla** — se corrige el guión, no la pantalla. Y **oculta
-> secretos**: la sección 🔑 API Keys enseña los 6 primeros caracteres de cada clave; no te detengas
-> ahí y nunca abras `.env` en cámara.
+> **Regla de honestidad (marca del proyecto — INNEGOCIABLE):** cada cifra dicha está verificada contra
+> la fuente (ver §Cifras verificadas). **Cero inventos.** Si al grabar un número no cuadra con lo que
+> muestra la pantalla en ese instante, **manda la pantalla** — se corrige el guion (y el HTML si hace
+> falta), NUNCA la toma. Jerarquía de verdad: **dashboard > caption del portfolio > este guion.**
+>
+> **⚠️ Regla propia de ESTE proyecto:** el argumento del vídeo es que *terminar sin error no significa
+> estar bien*. Por eso **no se maquilla la toma**: si sale un reintento o un 429 del tier gratuito, se
+> corta y se re-graba — nunca se acelera la voz ni se disimula. Y el límite reconocido (la subida a
+> YouTube aún no existe) **se dice en cámara**: dicho de frente, refuerza todo lo demás.
 
-**Leyenda:** ★ = corte tight (hero ~3:00) · ○ = tour extendido · `⏸` = beat/pausa.
+**Leyenda:** ★ = imprescindible (corte hero ~3:10) · ○ = tour extendido · `⏸` = beat/pausa.
+Cuando la cabecera de una sección lleva ★, **todas** sus filas son hero; si no, manda la marca de cada fila.
 Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
+
+---
+
+## ⏱️ Pre-flight (antes de grabar — IMPRESCINDIBLE)
+
+### 🔴 Lo que NO puede aparecer en ningún fotograma
+
+- [ ] **`.env`, jamás en cámara.** Contiene `OPENROUTER_API_KEY` y `YOUTUBE_API_KEY`.
+- [ ] **🔑 API Keys (en 📊 Estado) enseña los 6 primeros caracteres** de cada clave (`api_key[:6] + "…"`).
+      Son prefijos genéricos (`sk-or-`, `AIza…`) y no comprometen nada, pero **no te detengas ahí**:
+      pasa de largo o recorta el encuadre.
+- [ ] **El desplegable de 🎬 Operar listará la grabación real de 12,91 GB.** **No la elijas en cámara**:
+      arrancaría una corrida de producción de ~40 min y ~46 de las 50 peticiones del día.
+
+### 🎬 Montar la toma (la corrida de §4 tiene que ser real)
+
+- [ ] **Copia** —no muevas— `test_e2e/input/clip.mp4` (200 s) → `input/`. Verificado en `main.py`: la
+      ingesta **no borra** el archivo de entrada, solo el temporal limpio. El fixture del gate queda intacto.
+- [ ] **Elige un clip con pausas.** Si el gameplay es 100 % continuo, la ingesta toma el atajo de recorte
+      y el plano de §4 no enseña nada. Con pausas se ejecuta la ruta real (detección + concatenado).
+- [ ] **⚙️ Config → 📖 Historia:** baja *Duración mínima para producir (segundos)* de `1200` a `150` y
+      guarda. Es el único mando que hay que tocar: el dashboard lee `config.yaml` y `build_command`
+      **no** acepta `--config`, así que no se puede apuntar a `test_e2e/config.yaml` desde la interfaz.
+- [ ] **⚠️ Restaura `1200` en cuanto termines de grabar.** `target_duration_min` es **superficie
+      sensible**: dejarla en 150 cambia la producción real en silencio.
+- [ ] **Presupuesto de la toma:** clip de 200 s → 650 palabras → **1 bloque + 4 shorts ≈ 5 peticiones**
+      de las 50 diarias. Deja margen para un reintento.
+- [ ] **Cronometra la corrida real** y apunta el tiempo. Sirve para calibrar los cortes de §4; no
+      inventes la cifra ni la digas si no la mediste.
+- [ ] **Plan B sin correr nada:** `test_e2e/output/` y `test_e2e/shorts/` ya contienen los artefactos
+      reales de la validación de agosto (1 vídeo + 4 shorts con títulos distintos). Cubren §0 y §5;
+      solo §4 necesita la corrida en vivo.
+
+### 🖥️ Grabar limpio
+
+- [ ] **16:9**, ventana maximizada, zoom del navegador legible, sin extensiones ni barra de marcadores.
+- [ ] El clip del fixture es **720p**, así que el vídeo de salida también. **No digas «1080p» en cámara.**
+- [ ] Si algo falla en pantalla (un 429, un reintento del modelo), **corta y re-toma**. No lo dejes en la grabación.
+- [ ] **No aceleres la voz.** Para el render largo de §4, **corta**; y si usas timelapse, **rotúlalo en
+      pantalla** («×8»). Un acelerado sin rótulo resta credibilidad justo donde el argumento es la honestidad.
 
 ---
 
@@ -29,7 +77,7 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
 | 0:00 | `video_001_final.mp4` a pantalla completa, 6 s en un tramo con subtítulo (palabra en MAYÚSCULAS, centrada). Corte rápido a la rejilla de los 4 shorts verticales. | «Esto —vídeo, voz, subtítulos, miniatura y cuatro shorts verticales— lo ha producido un pipeline entero a partir de una grabación de Minecraft en bruto. Nadie ha tocado un fotograma.» | "This —video, voice, subtitles, thumbnail and four vertical shorts— was produced end to end by a pipeline, out of a raw Minecraft recording. Nobody touched a single frame." |
-| 0:10 | El dashboard abriéndose en **🗺️ Roadmap**. ⏸ | «Y el modo de fallo de algo así no es que pete: es que entregue un vídeo que **parece terminado** y esté roto donde nadie mira. Te enseño el sistema en marcha, pestaña por pestaña.» | "And the failure mode of something like this isn't crashing: it's shipping a video that **looks finished** and is broken where nobody looks. Let me show you the system running, tab by tab." |
+| 0:10 | El dashboard abriéndose en **🗺️ Roadmap**, con las 7 pestañas visibles arriba. ⏸ | «Y el modo de fallo de algo así no es que pete: es que entregue un vídeo que **parece terminado** y esté roto donde nadie mira. Te enseño el sistema en marcha, pestaña por pestaña.» | "And the failure mode of something like this isn't crashing: it's shipping a video that **looks finished** and is broken where nobody looks. Let me show you the system running, tab by tab." |
 
 ---
 
@@ -55,7 +103,7 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
-| 1:08 | Tab **🎬 Operar**: modo *Procesar un archivo de gameplay nuevo* → fuente *Seleccionar de input/* → elige el clip. Luego **Opciones**: estilo `dramatic`, ✅ *Generar shorts*. | «Operar es el arranque. Elijo el gameplay, el estilo de la historia y si quiero shorts. Eso es todo lo que tengo que decidir.» | "Operate is the launcher. I pick the gameplay, the story style, and whether I want shorts. That's everything I have to decide." |
+| 1:08 | Tab **🎬 Operar**: modo *Procesar un archivo de gameplay nuevo* → fuente *Seleccionar de input/* → elige **el clip**, no la grabación de 12,91 GB. Luego **Opciones**: estilo `dramatic`, ✅ *Generar shorts*. | «Operar es el arranque. Elijo el gameplay, el estilo de la historia y si quiero shorts. Eso es todo lo que tengo que decidir.» | "Operate is the launcher. I pick the gameplay, the story style, and whether I want shorts. That's everything I have to decide." |
 | 1:24 | Zoom al bloque **Comando que se ejecutará** con el `st.code`: `python main.py --video … --style dramatic`. Déjalo 2 s. | «Y aquí está la decisión de diseño que más me importa: el dashboard **no importa funciones del pipeline**. Enseña el comando exacto y lanza `main.py` como un **subproceso**. Lo que ves es lo que corre — y si cierro el dashboard, la corrida sigue viva.» | "And here's the design decision I care most about: the dashboard **doesn't import pipeline functions**. It shows the exact command and launches `main.py` as a **subprocess**. What you see is what runs — and if I close the dashboard, the run stays alive." |
 | 1:38 | Click en **🚀 Ejecutar pipeline** → el toast «Corrida lanzada (PID …)». ⏸ | «Le doy al play.» | "I hit play." |
 
@@ -66,9 +114,9 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
 | 1:45 | Tab **📡 Progreso**: **🟢 Ejecutando… (PID …)**, **Fase actual: Ingestando**, y el log en vivo corriendo solo. Resalta `--- Ingesting: …` y `Recodificando para pool`. | «Progreso es la ventana al motor: el log real del proceso y la fase deducida de él. Primera fase, **ingesta**: detecta la *hotbar* de Minecraft fotograma a fotograma y tira pausa, escritorio y menús. Lo que sobrevive se recodifica y entra al pool.» | "Progress is the window into the engine: the process's real log, and the phase inferred from it. First phase, **ingest**: it detects Minecraft's hotbar frame by frame and drops pause, desktop and menus. Whatever survives is re-encoded and enters the pool." |
-| 2:05 | Timelapse ×8. **Fase actual: Generando historia**. En el log: `=== Produciendo pool_0001 (200s / 3.3min) ===`, `Duración: 200s -> objetivo: 650 palabras`, `Título: Mi Madre Firmó La Casa…`. | "Segunda: la **historia**. El pipeline calcula cuántas palabras caben en ese gameplay a la velocidad real de esta voz —195 palabras por minuto, **medida**, no supuesta— y se las pide al modelo. El título va **forzado** como primera frase del speech, porque de él dependen la miniatura y la intro." | "Second: the **story**. The pipeline works out how many words fit that gameplay at this voice's real speed —195 words per minute, **measured**, not assumed— and asks the model for them. The title is **forced** as the speech's first sentence, because the thumbnail and the intro both depend on it." |
+| 2:05 | Corte (o timelapse **rotulado ×8**). **Fase actual: Generando historia**. En el log: `=== Produciendo … (200s / 3.3min) ===`, `Duración: 200s -> objetivo: 650 palabras`, `Título: Mi Madre Firmó La Casa…`. | «Segunda: la **historia**. El pipeline calcula cuántas palabras caben en ese gameplay a la velocidad real de esta voz —195 palabras por minuto, **medida**, no supuesta— y se las pide al modelo. El título va **forzado** como primera frase del speech, porque de él dependen la miniatura y la intro.» | "Second: the **story**. The pipeline works out how many words fit that gameplay at this voice's real speed —195 words per minute, **measured**, not assumed— and asks the model for them. The title is **forced** as the speech's first sentence, because the thumbnail and the intro both depend on it." |
 | 2:22 | **Fase actual: Sintetizando voz**. Log: `Sintetizando audio`, `Alineando texto con audio (forced alignment, small)`, y sobre todo `Anclas duras: N/N frases ancladas a SentenceBoundary`. Deja esa línea 2 s. | «Tercera: **voz y sincronismo**. Text-to-speech en español, y encima un *forced alignment* con Whisper que localiza dónde suena exactamente cada palabra. Esa línea de **anclas duras** es el corazón del proyecto — al final del vídeo te enseño por qué.» | "Third: **voice and sync**. Spanish text-to-speech, and on top of it a *forced alignment* with Whisper that locates exactly where each word sounds. That **hard anchors** line is the heart of the project — at the end I'll show you why." |
-| 2:38 ○ | **Fase actual: Componiendo video** (`Titulo (N palabras) termina en: X s`) → **Generando shorts** (`--- Generando short 1 para video 1 (offset=…s) ---`). | «Cuarta: **composición**. La intro animada dura exactamente lo que el narrador tarda en decir el título, y los subtítulos empiezan después. Y quinta: los **shorts** verticales, cada uno con un tramo distinto del gameplay.» | "Fourth: **composition**. The animated intro lasts exactly as long as the narrator takes to say the title, and subtitles start after it. And fifth: the vertical **shorts**, each one on a different stretch of gameplay." |
+| 2:38 ○ | **Fase actual: Componiendo video** (`Titulo (N palabras) termina en: X s`) → **Generando shorts** (`--- Generando short 1 para video 1 (offset=…s) ---`). | «Cuarta: **composición**. La intro animada dura exactamente lo que el narrador tarda en decir el título, y los subtítulos empiezan después. Y quinta: los **shorts** verticales, cada uno sobre un tramo distinto del gameplay.» | "Fourth: **composition**. The animated intro lasts exactly as long as the narrator takes to say the title, and subtitles start after it. And fifth: the vertical **shorts**, each one on a different stretch of gameplay." |
 | 2:48 | `✅ Terminado: 1 video(s) producido(s)` y **Fase actual: Terminado**. ⏸ | «Y termina. Ojo a esto: *terminar sin error* **no** significa que esté bien. Eso lo decide otra capa.» | "And it finishes. Careful with that: *finishing without an error* does **not** mean it's correct. Another layer decides that." |
 
 ---
@@ -101,93 +149,83 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 
 ---
 
-## 8 · EXTRA · El gate y el panel que intenta romperlo — 4:20–4:48
+## 8 · El gate y el panel que intenta romperlo — 4:20–4:48  ★ CLÍMAX
 
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
-| 4:20 ★ | Terminal: `/eval` corriendo sobre `test_e2e/`, o la salida de la medición de sincronismo. | «Nada de esto se cierra a ojo. Hay un **gate** que corre la cadena entera contra un clip fijo y **mide la salida**: error de sincronismo entre voz y subtítulo, pausas que caen fuera de puntuación, variedad de los shorts. Si un cambio empeora el baseline, no se cierra. No es un aviso: es un no.» | "None of this closes by eye. There's a **gate** that runs the whole chain against a fixed clip and **measures the output**: voice-to-subtitle sync error, pauses landing outside punctuation, shorts variety. If a change worsens the baseline, it doesn't close. That's not a warning: it's a no." |
-| 4:36 ○ | Los agentes en `.claude/agents/` o el diagrama `#metodo` del portfolio. | «Y encima, un panel adversarial: un agente que busca la causa raíz **sin ver el contexto**, y otro cuyo único trabajo es **intentar demostrar que el vídeo está roto** midiendo sus artefactos. Yo re-derivo cada veredicto **ejecutando**, nunca por informe.» | "And on top, an adversarial panel: one agent that finds the root cause **with no context**, and another whose only job is to **try to prove the video is broken** by measuring its artifacts. I re-derive every verdict by **executing**, never by report." |
+| 4:20 | Terminal preparada (ventana limpia, fuente grande, `cd` hecho, comando escrito **sin ejecutar**): `/eval` corriendo sobre `test_e2e/`, o la salida de la medición de sincronismo. Se ejecuta en cámara. | «Nada de esto se cierra a ojo. Hay un **gate** que corre la cadena entera contra un clip fijo y **mide la salida**: error de sincronismo entre voz y subtítulo, pausas que caen fuera de puntuación, variedad de los shorts. Si un cambio empeora el baseline, no se cierra. No es un aviso: es un no.» | "None of this closes by eye. There's a **gate** that runs the whole chain against a fixed clip and **measures the output**: voice-to-subtitle sync error, pauses landing outside punctuation, shorts variety. If a change worsens the baseline, it doesn't close. That's not a warning: it's a no." |
+| 4:36 ○ | Los agentes en `.claude/agents/`, o el diagrama `#metodo` del portfolio. | «Y encima, un panel adversarial: un agente que busca la causa raíz **sin ver el contexto**, y otro cuyo único trabajo es **intentar demostrar que el vídeo está roto** midiendo sus artefactos. Yo re-derivo cada veredicto **ejecutando**, nunca por informe.» | "And on top, an adversarial panel: one agent that finds the root cause **with no context**, and another whose only job is to **try to prove the video is broken** by measuring its artifacts. I re-derive every verdict by **executing**, never by report." |
 
 ---
 
-## 9 · El bug que solo se ve midiendo + cierre — 4:48–5:20  ★
+## 9 · El bug que solo se ve midiendo — 4:48–5:10  ★ FLAGSHIP
 
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
-| 4:48 | El bloque `#desfase` del portfolio con la línea de tiempo animada: la pista roja «ANTES» quedándose atrás frente a la cian «AHORA». | «Y esta es la razón de todo lo anterior. Durante meses los subtítulos fueron **por detrás** de la voz. El pipeline no daba ningún error: producía MP4 perfectos. La causa era que el motor de voz **no marca palabras, solo frases** — y esa ventana incluye los silencios, así que el reparto empujaba cada palabra más tarde de cuando sonaba. Medido contra una transcripción independiente: **medio segundo** de error medio. Hoy son **0,146** — y por delante, no por detrás.» | "And this is the reason for everything above. For months the subtitles ran **behind** the voice. The pipeline threw no error: it produced perfect MP4s. The cause was that the voice engine **doesn't mark words, only sentences** — and that window includes the silences, so spreading words across it pushed every one later than it sounded. Measured against an independent transcript: **half a second** of mean error. Today it's **0.146** — and ahead, not behind." |
-| 5:06 | Vuelta al dashboard, o la carpeta `output/` con los tres archivos. Cierre en contacto. ⏸ | «El pipeline se para en `output/`: la subida automática a YouTube es el siguiente paso y **aún no está construida**. Lo digo porque prefiero decirlo. Empecé sin saber programar y lo levanté **solo, con IA**. Si buscas a alguien que construya sistemas autónomos **y** las medidas que impiden que se engañen a sí mismos… hablemos.» | "The pipeline stops at `output/`: automatic upload to YouTube is the next step and it **isn't built yet**. I'd rather say it than imply otherwise. I started not knowing how to code and built it **solo, with AI**. If you want someone who builds autonomous systems **and** the measurements that stop them fooling themselves… let's talk." |
+| 4:48 | El bloque `#desfase` del portfolio con la línea de tiempo animada: la pista roja «ANTES» quedándose atrás frente a la cian «AHORA». Deja que el playhead recorra la frase entera. | «Y esta es la razón de todo lo anterior. Durante meses los subtítulos fueron **por detrás** de la voz. El pipeline no daba ningún error: producía MP4 perfectos. La causa era que el motor de voz **no marca palabras, solo frases** — y esa ventana incluye los silencios, así que el reparto empujaba cada palabra más tarde de cuando sonaba. Medido contra una transcripción independiente: **medio segundo** de error medio. Hoy son **0,146** — y por delante, no por detrás.» | "And this is the reason for everything above. For months the subtitles ran **behind** the voice. The pipeline threw no error: it produced perfect MP4s. The cause was that the voice engine **doesn't mark words, only sentences** — and that window includes the silences, so spreading words across it pushed every one later than it sounded. Measured against an independent transcript: **half a second** of mean error. Today it's **0.146** — and ahead, not behind." |
 
 ---
 
-## Preparación de la toma
+## 10 · Cierre — 5:10–5:28  ★
 
-Grabar §4 exige una **corrida real**. Una de producción son ~40 min de render y ~46 de las 50 peticiones
-diarias del tier gratuito: inviable para una toma. Se graba con el **clip corto del gate**.
-
-1. **Copia** (no muevas) `test_e2e/input/clip.mp4` → `input/`. La ingesta **no borra** el archivo de
-   `input/`, solo el temporal limpio, así que el fixture queda intacto igualmente.
-   ⚠️ `input/` ya contiene la grabación real (**12,91 GB**, tal como la muestra 📊 Estado): aparecerá en el desplegable de 🎬 Operar.
-   **No la elijas en cámara.**
-2. En **⚙️ Config → 📖 Historia**, baja *Duración mínima para producir (segundos)* de `1200` a `150`
-   y guarda. Es el único mando que hay que tocar: el dashboard lee `config.yaml` y `build_command`
-   **no** acepta `--config`, así que no se puede apuntar a `test_e2e/config.yaml` desde la interfaz.
-   👉 Este cambio es un buen plano en sí mismo (§7), pero **restaura `1200` al terminar**:
-   `target_duration_min` es superficie sensible y quedaría alterada en producción.
-3. **Presupuesto de la toma** con el clip de 200 s: 650 palabras → **1 bloque** + **4 shorts** =
-   **~5 peticiones** de las 50 del día. Deja margen para un reintento.
-4. **Elige un clip con pausas.** Si el gameplay es 100 % continuo, la ingesta toma el atajo de recorte
-   y el plano de §4 no enseña nada. Con pausas se ejecuta la ruta real (detección + concatenado).
-5. **Cronometra la corrida** y apunta el tiempo real: sirve para calibrar el timelapse y por si quieres
-   decir la cifra. No la inventes en el guión.
-6. **Plan B sin correr nada:** `test_e2e/output/` y `test_e2e/shorts/` ya contienen los artefactos
-   reales de la validación de agosto (1 vídeo + 4 shorts con títulos distintos). Sirven para §0 y §5;
-   solo §4 necesita la corrida en vivo.
+| t | PANTALLA | ES | EN |
+|---|---|---|---|
+| 5:10 | Vuelta al dashboard, o la carpeta `output/` con los tres archivos. Cierre en contacto. ⏸ | «El pipeline se para en `output/`: la subida automática a YouTube es el siguiente paso y **aún no está construida**. Lo digo porque prefiero decirlo. Empecé sin saber programar y lo levanté **solo, con IA**. Si buscas a alguien que construya sistemas autónomos **y** las medidas que impiden que se engañen a sí mismos… hablemos.» | "The pipeline stops at `output/`: automatic upload to YouTube is the next step and it **isn't built yet**. I'd rather say it than imply otherwise. I started not knowing how to code and built it **solo, with AI**. If you want someone who builds autonomous systems **and** the measurements that stop them fooling themselves… let's talk." |
 
 ---
 
 ## Notas de producción
 
-- **Todas las pantallas son reales.** El dashboard se levanta con `streamlit run dashboard.py`. Los
-  únicos planos fuera de él son la terminal de §8 y el bloque `#desfase` del portfolio en §9.
-- **Ritmo:** deja cada cifra 1–2 s en pantalla mientras se nombra. No leas un número que la pantalla no
-  muestre en ese instante. En §4 usa timelapse ×8, pero **con la etiqueta *Fase actual* siempre visible**:
-  es lo que cuenta la historia.
-- **El clip del fixture es 720p**, así que el vídeo de salida también. No digas «1080p» en cámara.
-- **Ocultar secretos:** 🔑 API Keys enseña los 6 primeros caracteres de cada clave. No te pares ahí y
-  no abras `.env` en cámara.
-- **Bilingüe:** una sola grabación, dos locuciones (o subtítulos ES/EN). El portfolio ya alterna idioma.
-- **Corte hero vs tour:** filas ★ ≈ 3:00 (Hook + Roadmap + Operar + Progreso + Resultados + gate +
-  cierre). Filas ○ = tour extendido pestaña a pestaña (~5:20).
-- **Embeber luego:** reemplaza el `<div class="video-ph">` de `Portafolio/YOUTUBE-PIPELINE.html`
-  (instrucciones en el comentario justo encima) por el `<iframe>`/`<video>`.
+- **Todas las pantallas son reales.** El dashboard es `streamlit run dashboard.py` (skill `/run`). La
+  terminal del clímax es real: se escribe y se ejecuta en cámara, no se simula. Los únicos planos fuera
+  del dashboard son esa terminal (§8) y el bloque `#desfase` del portfolio (§9).
+- **Ritmo:** deja cada cifra 1–2 s en pantalla mientras se nombra. **No leas un número que la pantalla no
+  muestre en ese instante.** En §4 la etiqueta *Fase actual* debe estar **siempre visible**: es lo que
+  cuenta la historia mientras el log corre.
+- **Cortes, no acelerones.** El render de §4 tarda; se corta. Si usas timelapse, rotúlalo («×8») y nunca
+  aceleres la voz.
+- **El clip del fixture es 720p** → el vídeo de salida también. No digas «1080p».
+- **Corte hero vs tour:** filas ★ ≈ **3:10** — hook · Roadmap · pool de Estado · Operar entero (incluido el
+  comando) · Progreso entero · Resultados entero · el gate · el desfase · cierre. Filas ○ = tour extendido
+  pestaña a pestaña (~5:30). Suma verificada beat a beat, no estimada a ojo.
+- **Bilingüe:** una sola grabación, dos locuciones (o subtítulos ES/EN). El portfolio ya alterna idioma con
+  su propio toggle.
+- **Embeber luego:** reemplazar el `<div class="video-ph">` de `PORTAFOLIO/YOUTUBE-PIPELINE.html`
+  (§`#recorrido`; las instrucciones están en el comentario HTML justo encima) por el `<iframe>` de YouTube
+  o un `<video>` local.
+- **Consistencia con los hermanos:** mismo formato que `pumpfun-bot/docs/video_guion.md` y
+  `PORTAFOLIO/ecxm-ops/ECXM-OPS-guion-video.md` — voz en off ES+EN sobre screen-recording, sin
+  talking-head, tabla `t · PANTALLA · ES · EN`, leyenda ★/○/⏸, pre-flight, cifras verificadas.
 
 ---
 
-## Estructura real del dashboard usada (verificada en `dashboard.py`, `st.tabs` L168)
+## Estructura real del dashboard usada (verificada en `dashboard.py`, `st.tabs` L168, 2026-08-10)
 
-| Pestaña | Secciones (tal cual en el dashboard) |
+| Pestaña (label real) | Qué se graba |
 |---|---|
-| 🗺️ Roadmap | El viaje completo de un video (SVG) · Qué hace cada pestaña · Un par de decisiones que quizá te sorprendan |
-| 📊 Estado | 🎮 Pool de gameplay · 📁 Archivos · 🔧 Dependencias · 🔑 API Keys |
+| 🗺️ Roadmap | El viaje completo de un video (SVG) · el `st.info` de una frase |
+| 📊 Estado | 🎮 Pool de gameplay (métricas + barra) · 📁 Archivos · 🔧 Dependencias · 🔑 API Keys |
 | 🎬 Operar | Modo · Fuente · Opciones (estilo · shorts · dry-run) · **Comando que se ejecutará** · 🚀 Ejecutar pipeline |
 | 📡 Progreso | Estado + PID · **Fase actual** · Log en vivo (tail 200 líneas, refresco 2 s) · ⏹️ Detener corrida |
 | 🖼️ Resultados | 🎬 Videos largos (miniatura · título · MP4 · descargas) · 📱 Shorts |
-| 🔍 Competencia | 🔥 Videos virales · 📋 Lista de competidores · 🧠 Qué atacar (debate + inyección) |
+| 🔍 Competencia | 🔥 Videos virales · 📋 Lista de competidores · 🧠 Qué atacar (debate + bloque inyectado) |
 | ⚙️ Config | 🎙️ TTS · 💬 Subtítulos · 📖 Historia · 📱 Shorts · 🎞️ Video |
 
-*(7 pestañas · el pipeline se lanza como subproceso vía `dashboard_runner.launch_run`, nunca importando
+*(7 pestañas · el pipeline se lanza como **subproceso** vía `dashboard_runner.launch_run`, nunca importando
 funciones de fase.)*
 
 ---
 
 ## Cifras verificadas (contra fuente, 2026-08-10)
 
-| Cifra en el guión | Fuente | Estado |
+| Cifra en el guion | Fuente | Estado |
 |---|---|---|
 | 4 shorts = **4 historias distintas** (hermano/coche · suegra/cerradura · exnovia/videojuegos · socio/receta) | `test_e2e/shorts/short_00N_title.txt` (leídos) | ✅ |
 | Clip de entrada 200 s · vídeo de salida 182,6 s | `ffprobe` sobre `test_e2e/input/clip.mp4` y `output/video_001_final.mp4` | ✅ |
 | Shorts verticales 1080×1920 · 26–49 s | `ffprobe` sobre los 4 `short_00N.mp4` | ✅ |
 | Vídeo de salida 720p (lo hereda del clip) | `ffprobe`: clip 1280×720 | ✅ |
+| `video_001_final.mp4 — 316,3 MB` tal como lo muestra el dashboard | `_size_mb` = bytes/1024² sobre 331.623.357 B | ✅ |
+| Grabación real de `input/` = **12,91 GB** en 📊 Estado | `input_gb` = bytes/1024³ sobre 13.865.945.756 B | ✅ |
 | 195 wpm **medido** (antes 150 → vídeo ~30 % más corto que el chunk) | `config.yaml` `story.target_wpm` + comentario | ✅ |
 | Título forzado como primera frase del speech | `script_generator._ensure_title_at_start` | ✅ |
 | Anti-repetición: se pasan los títulos ya generados | `shorts_generator._build_avoid_block` (`avoid[-12:]`) | ✅ |
@@ -198,6 +236,7 @@ funciones de fase.)*
 | Inyección reversible entre marcadores, con OK del usuario | `trend_advisor` (`BEGIN_MARK`/`END_MARK`, `remove_from_prompt`) | ✅ |
 | El dashboard lanza `main.py` como **subproceso** y enseña el comando | `dashboard_runner.build_command` + `launch_run`; `dashboard.py` L528-L531 | ✅ |
 | *Fase actual* se deduce del log, no del código | `dashboard_runner.current_phase` | ✅ |
+| La ingesta **no borra** el archivo de `input/` | `main.py` L40-L66 (solo `os.remove(clean_path)`) | ✅ |
 | Presupuesto de la toma ≈ 5 peticiones (1 bloque + 4 shorts) | fórmula de `main.py` L79-L86 + `WORDS_PER_BLOCK=2000` → coincide con los 4 shorts reales | ✅ |
 | La subida a YouTube **no está construida** (1.600 unidades/vídeo) | `seeds/SEED_2_subida_youtube.md` + `CLAUDE.md` §Lo que falta | ✅ |
 
