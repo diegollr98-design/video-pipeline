@@ -152,11 +152,24 @@ def get_pool_status(config):
     return status
 
 
-def take_chunk(config):
+# Ruta falsa que se devuelve en dry-run. NO existe en disco a propósito: el
+# `finally` de `main.py` hace `os.remove` sobre el chunk, y así ese borrado no
+# encuentra nada que borrar. Se ve en los logs, que es justo lo que se quiere.
+DRY_RUN_CHUNK = "<dry-run: el pool NO se ha consumido>"
+
+
+def take_chunk(config, dry_run=False):
     """
     Take a chunk of gameplay from the pool for one video.
 
     Returns (chunk_path, duration) if enough material, or (None, 0) if not.
+
+    [DRYRUN-01] Con `dry_run=True` calcula la MISMA duración pero **sin tocar el
+    disco**: ni parte ficheros, ni mueve el sobrante, ni borra nada del pool, y
+    devuelve `DRY_RUN_CHUNK` como ruta. Esto existe porque `--dry-run` está
+    documentado como "solo genera historia sin video" y en realidad **consumía y
+    borraba el pool** (los `os.remove` de más abajo), destruyendo horas de
+    grabación sin producir ni un vídeo. El pool no se recupera.
 
     Logic:
     - < 20 min in pool: wait for more gameplay
@@ -195,6 +208,12 @@ def take_chunk(config):
             if needed < 30:
                 break
 
+            if dry_run:
+                # Misma aritmética, cero efectos: no se parte el fichero ni se
+                # mueve el sobrante al pool.
+                accumulated += needed
+                break
+
             part1 = os.path.join(temp_dir, "chunk_part.mp4")
             part2 = os.path.join(temp_dir, "chunk_remainder.mp4")
 
@@ -210,17 +229,23 @@ def take_chunk(config):
             logger.info(f"Sobrante guardado en pool: {os.path.basename(final_remainder)} ({dur - needed:.0f}s)")
             break
 
-        if accumulated >= target_min:
-            # We have enough, check if we should stop or keep adding
-            # Only stop if we're in the "sweet zone" (20-39 min)
-            remaining_pool = total_duration - accumulated
-            if accumulated < target_max:
-                # Under 40 min — check if adding more would overshoot
-                pass  # continue loop, let the next iteration decide
+        # Con material de sobra NO se corta aquí: quien decide es la siguiente
+        # vuelta, que o mete el fichero entero (si cabe bajo target_max) o parte
+        # en chunk_size. El bloque que había aquí calculaba `remaining_pool` y
+        # terminaba en un `pass`: no hacía nada.
 
     if accumulated < target_min:
         logger.info(f"No hay suficiente gameplay seleccionable ({accumulated:.0f}s < {target_min}s)")
         return None, 0
+
+    if dry_run:
+        # Se sale ANTES de concatenar y, sobre todo, antes de los `os.remove`
+        # del pool que hay al final de esta función.
+        logger.info(
+            f"dry-run: se usarian {accumulated:.0f}s ({accumulated/60:.1f} min) de "
+            f"{len(selected)} fichero(s). El pool NO se toca."
+        )
+        return DRY_RUN_CHUNK, accumulated
 
     # Concatenate selected files into one chunk
     chunk_id = int(time.time())

@@ -7,7 +7,7 @@ import sys
 
 from modules.utils import (
     load_dotenv, load_config, ensure_dirs, cleanup_temp,
-    get_video_duration, calculate_target_words, check_dependencies,
+    calculate_target_words, check_dependencies,
 )
 from modules.script_generator import generate_story, generar_titulo_youtube
 from modules.tts_engine import run_tts
@@ -110,11 +110,23 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
     else:
         num_shorts = shorts_config.get("generate_per_video", 2)
 
-    # Count existing shorts to avoid numbering collisions
-    existing_shorts = sorted(
-        glob.glob(os.path.join(config["paths"].get("shorts_dir", "./shorts_tiktok"), "short_*.mp4"))
+    # [SHORTNUM-01] Numeración por el MÁXIMO, no por el conteo. `len(...) + 1`
+    # colisiona en cuanto hay un hueco —un short borrado a mano, o uno que falló
+    # a mitad más abajo— y la tanda siguiente SOBRESCRIBE en silencio shorts ya
+    # producidos, mp4 y `_title.txt`. Medido: con `short_001, 003, 004` en disco,
+    # `len+1` da 4 y regenera encima de `short_004`.
+    # Es el idioma que ya usan sus dos hermanos: `main.py` para los vídeos y
+    # `dashboard_runner.py` para los logs.
+    existing_shorts = glob.glob(
+        os.path.join(config["paths"].get("shorts_dir", "./shorts_tiktok"), "short_*.mp4")
     )
-    short_num_base = len(existing_shorts) + 1
+    nums_shorts = []
+    for p in existing_shorts:
+        try:
+            nums_shorts.append(int(os.path.basename(p)[: -len(".mp4")].split("_")[1]))
+        except (IndexError, ValueError):
+            pass
+    short_num_base = (max(nums_shorts) + 1) if nums_shorts else 1
 
     # Títulos ya generados en esta tanda. Se le pasan al modelo para que no
     # repita la historia: sin esto los shorts salían todos iguales, porque cada
@@ -434,7 +446,6 @@ def main():
     logger.info(f"Pool: {len(pool)} archivos, {total_pool:.0f}s ({total_pool/60:.1f} min)")
 
     # === PHASE 2: Produce videos from pool ===
-    target_min = config["story"]["target_duration_min"]
     video_num = 1
     success = 0
 
@@ -454,7 +465,12 @@ def main():
     ultimo_chunk_dur = None
     stems_producidos = []
     while True:
-        chunk_path, chunk_duration = take_chunk(config)
+        # [DRYRUN-01] `take_chunk` CONSUME el pool: borra del disco los ficheros
+        # que selecciona. En dry-run no se produce ningún vídeo, así que hacerlo
+        # destruía horas de gameplay a cambio de nada — y `--dry-run` está
+        # documentado como "solo genera historia sin video". Con el flag, calcula
+        # la misma duración sin tocar el disco.
+        chunk_path, chunk_duration = take_chunk(config, dry_run=args.dry_run)
         if chunk_path is None:
             logger.info("No hay suficiente gameplay en el pool para otro video")
             break
@@ -483,9 +499,17 @@ def main():
             # y diagnosticar a ciegas.
             logger.error(f"Error produciendo video {video_num}: {e}", exc_info=True)
         finally:
-            # Cleanup chunk
+            # Cleanup chunk. En dry-run `chunk_path` es `DRY_RUN_CHUNK`, que no
+            # existe en disco a propósito: este borrado no encuentra nada.
             if os.path.exists(chunk_path):
                 os.remove(chunk_path)
+
+        if args.dry_run:
+            # OBLIGATORIO, no cosmético: en dry-run el pool no se consume, así
+            # que `take_chunk` devolvería el MISMO chunk en cada vuelta y el
+            # `while True` no terminaría nunca.
+            logger.info("Modo dry-run: una sola historia, el pool queda intacto")
+            break
 
     logger.info(f"Pipeline finalizado: {success} videos producidos")
 
