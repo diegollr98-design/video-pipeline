@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+from collections import Counter
 
 from modules.utils import _find_exe, load_config, get_video_duration
 from modules.script_generator import (
@@ -54,6 +55,51 @@ SETTLE_TIME = 0.25
 # 4,5 segundos" de CLAUDE.md) sin que nada lo detecte.
 _MIN_PALABRAS_SPEECH_SHORT = 80
 
+# [TITULO-LARGO-01] `prompts/short_story.txt` pide 10-18 palabras de título
+# ("Los shorts necesitan títulos que se lean en 2 segundos"), pero el único
+# guardia en código (`_validar_salida`, script_generator.py:339) acepta
+# 8-45 porque ese rango es COMPARTIDO con la historia larga (títulos de
+# 20-35 palabras allí). Pedirlo solo en el prompt no basta —es la misma
+# clase de fallo que las comas y la variedad de shorts (§17)—: medido en
+# disco había títulos de 20 palabras, y un A/B dio medianas de 17-18 con
+# picos de 24. El título entra en la INTRO del short y su duración depende
+# del número de palabras (`title_wc` más abajo, ~línea 470): un título de
+# 24 palabras alarga la intro ~1,7 s sobre un short de ~40 s.
+#
+# El máximo aquí NO es 18 a secas: 18+margen. Un título de 19-21 palabras
+# sigue siendo corto y forzar el límite exacto del prompt solo produce
+# reintentos por redondeos de 1-2 palabras sin mejorar nada perceptible.
+# 21 es el máximo que un A/B midió como "todavía se lee en ~2s" (mediana
+# real 17-18); por encima de eso el modelo entra en el modo "subtítulo
+# largo" que sí alarga la intro de forma medible.
+_MAX_PALABRAS_TITULO_SHORT = 21
+
+# Prefijos de motivo para las dos comprobaciones impuestas en ESTE módulo
+# (apertura repetida, título demasiado largo). Mismo patrón que
+# `_MOTIVO_PUNTUACION_PREFIJO` en script_generator.py: sirven para que el
+# mensaje de reintento sea específico en vez de caer en el genérico
+# "escribiste tu razonamiento", que no describe el fallo real y no ayuda al
+# modelo a corregirlo.
+#
+# OJO: "título de" a secas colisionaría con el motivo que YA emite
+# `_validar_salida` cuando el título viola el rango 8-45 que ella misma exige
+# (script_generator.py:340: f"título de {n} palabras (esperado {min}-45)").
+# Ese caso llega aquí con `ok=False` desde el principio (nunca entra en el
+# bloque `if ok:` de abajo), así que hoy no hay bug funcional — pero el
+# prefijo compartido lo dejaría a un cambio de distancia de confundir un
+# motivo con otro. Prefijo propio para que no dependa de esa casualidad.
+_MOTIVO_LONGITUD_PREFIJO = "short: título de"
+_MOTIVO_APERTURA_PREFIJO = "vuelve a empezar por"
+
+
+def _es_fallo_local(motivo):
+    """¿El rechazo vino de un guardia de ESTE módulo (apertura/longitud) y no
+    de `_validar_salida`? Determina qué mensaje de reintento se usa."""
+    return bool(motivo) and (
+        motivo.startswith(_MOTIVO_LONGITUD_PREFIJO)
+        or motivo.startswith(_MOTIVO_APERTURA_PREFIJO)
+    )
+
 
 def _build_avoid_block(avoid):
     """Bloque de prompt que lista lo ya generado para que no se repita.
@@ -88,29 +134,113 @@ en disputa, otro escenario y otro tipo de desenlace. No basta con cambiar el
 final ni con cambiar el sexo del culpable: cambia el CONFLICTO entero."""
 
 
-# Cuántos títulos seguidos con la MISMA palabra inicial se toleran antes de
-# exigir otra apertura. Medido sobre los 50 títulos de la primera tanda real:
-# 50/50 empezaban por "Mi", 33/50 con "vendió"/"robó". Los títulos eran distintos
-# entre sí (Jaccard máx 0,210, 24 parentescos), pero la PLANTILLA era una sola, y
-# una pared de 50 miniaturas que empiezan igual lee como granja de contenido. En
-# el corpus de competencia escaneado el ratio de primera persona era 0% en un
-# competidor real de 124k subs y 25% en el líder, frente al 75% de la granja de
-# drama doblado. No se prohíbe la primera persona (es el formato del nicho): solo
-# se corta la racha.
-RACHA_MAX_APERTURA = 5
+# [APERTURA-01] La versión anterior exigía UNANIMIDAD exacta de las últimas 5
+# (`len(set(ultimas)) == 1`). Eso se anula a sí misma: basta con que el propio
+# guardia funcione una vez para que la palabra distinta que él mismo produjo
+# entre en la ventana de 5 y la deje unánime-falsa. Medido en disco: el título
+# "Descubrí Que Mi Tío Falsificó..." (generado por el guardia) sembró la tanda
+# siguiente y dejó el guardia INERTE durante exactamente 4 shorts — el tamaño
+# de la ventana menos uno. Resultado: 12 de 12 títulos "Mi ...".
+#
+# Ahora se mide DOMINANCIA sobre una ventana más larga en vez de unanimidad
+# sobre una corta: no hace falta que TODOS compartan apertura, basta con que
+# una sola supere el umbral. Un acierto aislado del guardia (una apertura
+# distinta entre 9 iguales) ya no apaga la detección.
+_APERTURA_VENTANA = 10
+# Mínimo de títulos para que "dominancia" signifique algo. Con menos de 5 no
+# hay tanda que evaluar (al arrancar una corrida puede haber 0-4 en `avoid`):
+# el guardia se abstiene en vez de fallar sobre una muestra ruidosa, igual que
+# `_validar_puntuacion` se abstiene con poco texto (script_generator.py:293).
+_APERTURA_MIN_MUESTRA = 5
+# Fracción de la ventana que una misma apertura tiene que ocupar para
+# considerarse "racha". 0.6 sobre ventana=10 dispara con 6/10; sobre una
+# muestra corta de 5 (el mínimo) dispara con 3/5 — sigue exigiendo mayoría
+# clara, no un empate.
+#
+# Cota estructural (verificada con un mock adversarial en scratchpad, no solo
+# argumentada): con estos dos valores, una única apertura NUNCA puede
+# encadenar más de ceil(_APERTURA_DOMINANCIA * _APERTURA_VENTANA) = 6 títulos
+# seguidos sin que el guardia la corte — la vieja unanimidad de 5 no tenía
+# cota: una vez apagada por su propio acierto, corría LIBRE el resto de la
+# tanda (12/12 medido). Esta ventana no promete "0 repeticiones nunca": un
+# modelo cuyo default sin restricción es SIEMPRE la misma palabra puede
+# oscilar (racha de 6 -> corrige 5 -> vuelve a subir a 6...). Eso es MEJOR que
+# sin cota, y es exactamente el comportamiento que hay evidencia real de que
+# NO ocurre (medido: el modelo obedeció a la 1.ª llamada en 3/3 disparos
+# reales, no hay oscilación de vaivén observada en disco).
+_APERTURA_DOMINANCIA = 0.6
+
+# Familias de apertura que son la MISMA plantilla y no deberían contar como
+# dos aperturas distintas para efectos de "cortar la racha": "Mis Padres Me
+# Desheredaron" y "Mi Padre Me Desheredó" leen igual en una pared de
+# miniaturas. Solo se funde esta familia (no se generaliza a otras palabras,
+# para no fundir aperturas genuinamente distintas por accidente).
+_APERTURA_FAMILIAS = {"mi": "mi", "mis": "mi", "mí": "mi"}
 
 
 def _apertura(titulo):
     palabras = titulo.strip().split()
-    return palabras[0].lower().strip('¿¡"\'') if palabras else ""
+    if not palabras:
+        return ""
+    palabra = palabras[0].lower().strip('¿¡"\'.,;:!?')
+    return _APERTURA_FAMILIAS.get(palabra, palabra)
 
 
 def _apertura_agotada(avoid):
-    """True si los últimos títulos empiezan TODOS por la misma palabra."""
-    if not avoid or len(avoid) < RACHA_MAX_APERTURA:
+    """Apertura dominante de la ventana reciente, o None si no hay racha.
+
+    Sustituye la unanimidad exacta (ver comentario arriba) por dominancia:
+    la apertura más frecuente de las últimas `_APERTURA_VENTANA` tiene que
+    superar `_APERTURA_DOMINANCIA` del total de la ventana. Un único acierto
+    del guardia ya no lo apaga.
+    """
+    if not avoid or len(avoid) < _APERTURA_MIN_MUESTRA:
         return None
-    ultimas = [_apertura(t) for t in avoid[-RACHA_MAX_APERTURA:]]
-    return ultimas[0] if ultimas[0] and len(set(ultimas)) == 1 else None
+    ventana = avoid[-_APERTURA_VENTANA:]
+    aperturas = [_apertura(t) for t in ventana]
+    conteo = Counter(a for a in aperturas if a)
+    if not conteo:
+        return None
+    apertura, n = conteo.most_common(1)[0]
+    if n / len(ventana) >= _APERTURA_DOMINANCIA:
+        return apertura
+    return None
+
+
+# Diseño DESCARTADO, documentado a propósito (no lo dejes a medias): prescribir
+# la apertura por ROTACIÓN en código —una plantilla fija por short_num ("Mi
+# X...", "El día que...", "Descubrí que...", "Cuando...", "Nadie sabía
+# que...") en vez de reaccionar a una racha— y exigir que el título devuelto
+# encaje con la plantilla asignada.
+#
+# Es TÉCNICAMENTE viable sin tocar main.py ni script_generator.py:
+# `short_num` ya es monótono creciente entre corridas (main.py:129,
+# `short_num_base = max(nums_shorts) + 1`), así que `short_num % len(plantillas)`
+# da una rotación estable sin nuevo estado persistido.
+#
+# Se descarta por tres motivos, no por pereza:
+#   1. Coste MEDIDO vs SIN MEDIR. El guardia reactivo (dominancia sobre la
+#      ventana) cierra el defecto REAL observado ([APERTURA-01]) con coste
+#      medido ~0 (los 3 disparos observados obedecieron a la 1.ª llamada). La
+#      obediencia del modelo a una plantilla ARBITRARIA asignada por índice
+#      —que puede no encajar con la historia que le tocó escribir— no está
+#      medida, y §17 ya enseñó tres veces que una garantía de prosa que
+#      "debería" cumplirse no se puede asumir sin medirla.
+#   2. Encaje narrativo. "Nadie sabía que..." forzado sobre una historia donde
+#      SÍ se sospechaba, o "Cuando..." sobre un conflicto que no arranca con
+#      un instante puntual, es un remiendo peor que el problema: cambia el
+#      enganche de la historia por una regla de índice, y eso es juicio de
+#      calidad (Diego, §"El ojo de Diego"), no algo que este cambio deba
+#      decidir por su cuenta.
+#   3. Un patrón cíclico exacto es DETECTABLE igual que la racha que se quiere
+#      evitar: un espectador que ve varios shorts seguidos notaría que la
+#      apertura predice el short_num tan claramente como notaría 12/12 "Mi".
+#      La dominancia por mayoría dentro de una ventana no impone un ciclo
+#      fijo, solo evita que una sola apertura se coma la tanda.
+#
+# Si en el futuro se mide que la dominancia reactiva sigue sin bastar (nuevo
+# incidente con id, `produccion-loop.md` §E), la rotación prescrita es la
+# siguiente palanca a probar — con su propio guardia de encaje narrativo.
 
 
 def _generate_short_story(style, config, avoid=None):
@@ -127,8 +257,16 @@ def _generate_short_story(style, config, avoid=None):
 
     racha = _apertura_agotada(avoid)
     if racha:
+        # §13: el guardia era MUDO. Su único canal era la inyección de texto en
+        # el prompt (que no logea nada), así que parecía "nunca dispararse"
+        # aunque estuviera activo — o inerte por [APERTURA-01] y nadie podía
+        # distinguir un caso del otro sin leer el .ass o contar títulos a mano.
+        logger.info(
+            f"Short: racha de apertura detectada («{racha}» domina la ventana "
+            f"de {min(len(avoid), _APERTURA_VENTANA)}); pidiendo variación al modelo"
+        )
         prompt += (
-            f"\n\nAPERTURA OBLIGATORIAMENTE DISTINTA: los {RACHA_MAX_APERTURA} últimos "
+            f"\n\nAPERTURA OBLIGATORIAMENTE DISTINTA: la mayoría de los últimos "
             f"títulos empiezan por «{racha}». El tuyo NO puede empezar por esa palabra. "
             f"Empieza por otra cosa — el hecho, el momento o el lugar: «Descubrí que...», "
             f"«El día que...», «Cuando...», «Me echaron de...», «Nadie sabía que...». "
@@ -163,6 +301,14 @@ def _generate_short_story(style, config, avoid=None):
                     "al menos una coma en medio. Reescribe la historia entera con esa "
                     "puntuación.\n\n"
                 ) + prompt
+            elif _es_fallo_local(motivo):
+                # Mensaje específico en vez del genérico de "razonamiento": el
+                # modelo SÍ escribió una historia válida, solo hay que ajustar
+                # el título. Repetir el motivo exacto evita reintentos ciegos.
+                mensaje = (
+                    f"TU RESPUESTA ANTERIOR NO SIRVIÓ: {motivo}. Mantén la misma "
+                    f"historia y corrige SOLO el título para que cumpla.\n\n"
+                ) + prompt
             else:
                 mensaje = (
                     "TU RESPUESTA ANTERIOR NO SIRVIÓ: escribiste tu razonamiento en vez de la "
@@ -175,12 +321,33 @@ def _generate_short_story(style, config, avoid=None):
         ok, motivo = _validar_salida(title, speech, min_palabras_titulo=8,
                                      exigir_puntuacion=True,
                                      min_palabras_speech=_MIN_PALABRAS_SPEECH_SHORT)
-        # La apertura se PIDE en el prompt y se IMPONE aquí. Pedirla no basta:
-        # es la cuarta vez en este repo que una garantía en prosa no se cumple
-        # (comas, título, variedad de shorts). El último intento se acepta igual
-        # —un título repetitivo es mucho menos grave que quedarse sin short—.
-        if ok and racha and _apertura(title) == racha and intento < intentos - 1:
-            ok, motivo = False, f"vuelve a empezar por «{racha}» (racha de {RACHA_MAX_APERTURA})"
+
+        # La apertura y la longitud del título se PIDEN en el prompt y se
+        # IMPONEN aquí. Pedirlo no basta: son el 4.º y 5.º episodio de este
+        # repo donde una garantía en prosa no se cumple (comas, título al
+        # inicio, variedad de historia, y ahora apertura + longitud). En el
+        # último intento se acepta igual —un título repetitivo o largo es
+        # mucho menos grave que quedarse sin short— pero con log RUIDOSO
+        # (§13): antes ese camino era un fallback mudo.
+        motivo_extra = None
+        if ok:
+            n_titulo = len(title.split())
+            if n_titulo > _MAX_PALABRAS_TITULO_SHORT:
+                motivo_extra = (
+                    f"{_MOTIVO_LONGITUD_PREFIJO} {n_titulo} palabras (máximo "
+                    f"{_MAX_PALABRAS_TITULO_SHORT} en shorts; el prompt pide 10-18)"
+                )
+            elif racha and _apertura(title) == racha:
+                motivo_extra = f"{_MOTIVO_APERTURA_PREFIJO} «{racha}» (racha de apertura)"
+
+        if motivo_extra:
+            if intento < intentos - 1:
+                ok, motivo = False, motivo_extra
+            else:
+                logger.warning(
+                    f"Short: tras {intentos} intentos sigue fallando ({motivo_extra}); "
+                    f"se acepta igual (mejor un short imperfecto que ninguno)."
+                )
         if ok:
             break
         if _es_fallo_solo_puntuacion(motivo):

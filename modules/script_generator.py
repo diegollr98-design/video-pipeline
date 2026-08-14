@@ -1224,6 +1224,86 @@ def _partir_en_frases(texto):
     return piezas
 
 
+# --- Guardia contra la MUTILACIÓN del cuerpo al truncar [TRUNCA-01] ----------
+# `_truncate_to_words` (de arriba) ya conserva el desenlace, pero eso no
+# garantiza que la trama que el TÍTULO promete siga en el vídeo: el cuerpo que
+# se descarta para hacerle sitio al cierre puede llevarse la escena que
+# resuelve la historia. Caso real (`video_007`, corrida del gate del
+# 14-ago-2026): el título anuncia "...Pero El Notario Descubrió La Coacción Y
+# Anuló Todo" y esa escena de resolución NUNCA sobrevive al truncado -- vivía
+# en el bloque de cierre que se ACABABA de pedir (1059 palabras) y el recorte
+# a las últimas `preservar_cierre` (238 aquí) solo conserva la cola reflexiva
+# del epílogo, no la escena. `anul-` aparece CERO veces fuera del título en el
+# guion publicado. El vídeo miente en su propia miniatura y nadie lo ve: nadie
+# mira los 3 minutos de salida (tesis central de produccion-loop.md).
+#
+# Antes de este guardia, la única señal era un `logger.warning` con la propia
+# palabra "SALTO" en el mensaje (línea de abajo) — y §12 de este repo es
+# exactamente que un aviso que solo se imprime no defiende de nada en un
+# pipeline autónomo que nadie lee en tiempo real.
+#
+# Umbral, medido sobre los 7 truncados reales de `pipeline.log` a fecha
+# 14-ago-2026 (fracción del guion pre-truncado que NO sobrevive):
+#
+#   régimen                          total  conservadas  descartada
+#   PRODUCCIÓN real (16-ago, único dato real)  6979    5334      23,6%
+#   fixture E2E, 6 corridas (target_words diminuto frente
+#   al tamaño natural de un bloque del modelo)  2144-3347       71,8%-82,3%
+#
+# Separación limpia con 48 puntos de margen entre el único dato de producción
+# y el peor caso de fixture. El umbral se fija en el punto medio (47,7%),
+# redondeado a 0.50: deja el doble de margen sobre la producción real (no
+# dispara por un overshoot normal, el único que se ha medido) y queda 22
+# puntos por debajo del fixture más benigno (sigue disparando en el régimen
+# que lo mide). Con un `n` de producción real de 1, este umbral es una frontera
+# razonada, no una ley: si aparece un segundo dato real que la contradiga, se
+# recalibra (§10, no se afirma sin medir).
+#
+# Decisión: ABORTAR, no tomar un camino alternativo. Se consideró "conservar
+# el cierre COMPLETO en vez de solo su cola" para no perder la escena de
+# resolución, pero con `max_words` tan por debajo del tamaño natural de un
+# bloque (caso real: un cierre de 1059 palabras contra un objetivo de 623 EN
+# TOTAL) no cabe ni el cierre completo ni nada de hook: cualquier recorte que
+# quepa en el presupuesto pierde la mitad de la trama por definición, así que
+# "un camino que no rompa la narración" no existe en ese régimen -- inventar
+# uno sería otra garantía de prosa sin un `if` detrás (§17). Publicar de todos
+# modos es exactamente "un vídeo cuyo título promete algo que no está". El
+# coste de abortar es una corrida perdida (peticiones + tiempo); el coste de
+# no abortar es un vídeo mentiroso subido a YouTube. Mismo patrón y mismo
+# estilo que `_META_CORTE_MAX_FRAC` (arriba): un umbral nombrado y un `raise`,
+# no un `logger.warning`.
+_TRUNCADO_CUERPO_MAX_FRAC = 0.50
+
+
+def _verificar_no_mutila(total, conservadas, detalle):
+    """Aborta si conservar `conservadas` de `total` palabras es MUTILAR el
+    guion, no truncarlo. Ver `_TRUNCADO_CUERPO_MAX_FRAC` para la calibración
+    y el porqué de abortar en vez de avisar.
+
+    Se llama en los TRES puntos de salida de `_truncate_to_words` (el cierre
+    solo ya desborda el presupuesto, ni una frase del cuerpo cabe, o el
+    recorte normal) porque los tres significan lo mismo: el texto que se
+    publicaría representa `conservadas`/`total` del guion original. Un solo
+    punto de cálculo evita que una de las tres rutas quede sin guardia -- es
+    la clase de fallo de §17, 2.º corolario ("un guardia que existe no está
+    aplicado en TODAS las rutas").
+    """
+    if total <= 0:
+        return 0.0
+    frac_descartada = 1 - (conservadas / total)
+    if frac_descartada > _TRUNCADO_CUERPO_MAX_FRAC:
+        raise RuntimeError(
+            f"Truncado: mutilaría el {frac_descartada:.0%} del guion "
+            f"({total - conservadas} de {total} palabras descartadas), por "
+            f"encima del {_TRUNCADO_CUERPO_MAX_FRAC:.0%} máximo ({detalle}). "
+            f"Esto no es 'truncar el cuerpo', es borrarlo: la trama que el "
+            f"título promete probablemente no sobrevive. Se aborta el vídeo "
+            f"en vez de publicarlo con un título que miente (clase "
+            f"[TRUNCA-01])."
+        )
+    return frac_descartada
+
+
 def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
     """Recorta a ~max_words palabras SIN decapitar la historia.
 
@@ -1282,6 +1362,11 @@ def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
     # 2. El cuerpo: lo que quepa por delante dejándole sitio al cierre.
     presupuesto = max_words - palabras_cierre
     if presupuesto <= 0:
+        _verificar_no_mutila(
+            total, palabras_cierre,
+            f"el desenlace solo ({palabras_cierre} palabras) ya supera el "
+            f"objetivo de {max_words}"
+        )
         logger.warning(
             f"Truncado: el desenlace solo ({palabras_cierre} palabras) ya supera el "
             f"objetivo de {max_words}. Se conserva entero y se descarta el cuerpo."
@@ -1299,8 +1384,16 @@ def _truncate_to_words(text, max_words, preservar_cierre=_CIERRE_PRESERVADO):
 
     cuerpo = "".join(f + s for f, s in piezas[:fin_cuerpo]).rstrip()
     if not cuerpo:
+        _verificar_no_mutila(
+            total, palabras_cierre,
+            "ni una sola frase del cuerpo cabe en el presupuesto restante"
+        )
         return cierre
 
+    _verificar_no_mutila(
+        total, palabras_cuerpo + palabras_cierre,
+        f"frases {fin_cuerpo}-{ini_cierre} de {len(piezas)} descartadas del CUERPO"
+    )
     logger.warning(
         f"Truncado: se descartan {total - palabras_cuerpo - palabras_cierre} palabras "
         f"del CUERPO (frases {fin_cuerpo}-{ini_cierre} de {len(piezas)}). Se conservan "

@@ -248,6 +248,178 @@ def cierre_narrativo(log_path, stem):
                    "por el 85% del objetivo (clase [CIERRE-01])")
 
 
+_RE_TRUNCANDO = re.compile(r"Truncando de (\d+) a ~?(\d+) palabras")
+_RE_TRUNCADO_DESCARTA = re.compile(r"Truncado: se descartan (\d+) palabras del CUERPO")
+
+
+def truncado_narrativo(log_path, stem):
+    """[TRUNCA-01] ¿El truncado de esta historia mutiló el CUERPO?
+
+    `_truncate_to_words` (script_generator.py) deja constancia en el log de
+    CUÁNTO descarta cada vez que trunca, pero hasta este check NADA leía ese
+    WARNING: es "el aviso más ruidoso del log" y ningún gate lo comprobaba
+    (§12 -- un aviso que solo se imprime no defiende de nada en un pipeline
+    que nadie lee en tiempo real). Caso real: `video_007` descartó el 73,4%
+    del guion y salió con el gate en verde.
+
+    Reusa el MISMO umbral que la defensa de generación
+    (`_TRUNCADO_CUERPO_MAX_FRAC` de `script_generator`, importado aquí en vez
+    de duplicado) para que auditor y generador midan con la misma vara: un
+    vídeo producido ANTES de que el `if` existiera puede seguir superando el
+    umbral y esta es la red que lo caza en la salida ya publicada.
+
+    Devuelve `(bool|None, motivo, fraccion|None)`. `None` cuando no se pudo
+    comprobar (sin log, sin tramo) -- nunca se lee como "sano" (§16).
+    """
+    if not os.path.exists(log_path):
+        return None, "sin pipeline.log: no se puede comprobar el truncado", None
+    texto = open(log_path, encoding="utf-8", errors="replace").read()
+    bloques = texto.split("=== Produciendo ")
+    tramo = next((b for b in reversed(bloques) if b.startswith(stem)), None)
+    if tramo is None:
+        return None, f"no hay tramo de {stem} en el log", None
+    tramo = tramo.split("=== Completado")[0]
+
+    m_total = _RE_TRUNCANDO.search(tramo)
+    m_desc = _RE_TRUNCADO_DESCARTA.search(tramo)
+    if not m_total or not m_desc:
+        return True, "esta historia no se truncó", None
+
+    total = int(m_total.group(1))
+    if total <= 0:
+        return None, f"log con total={total}: no se puede calcular la fracción", None
+    descartadas = int(m_desc.group(1))
+    frac = descartadas / total
+
+    from modules.script_generator import _TRUNCADO_CUERPO_MAX_FRAC
+    if frac > _TRUNCADO_CUERPO_MAX_FRAC:
+        return False, (
+            f"el truncado descartó el {frac:.0%} del guion ({descartadas}/{total} "
+            f"palabras) -- por encima del {_TRUNCADO_CUERPO_MAX_FRAC:.0%} máximo. "
+            f"La versión actual del generador ABORTARÍA esta corrida en vez de "
+            f"publicarla (clase [TRUNCA-01])"
+        ), frac
+    return True, f"truncado dentro del umbral ({frac:.0%} del guion descartado)", frac
+
+
+# --- Coherencia título <-> cuerpo narrado [TRUNCA-01] ------------------------
+# `truncado_narrativo` (arriba) mide la CAUSA (cuánto se descartó); esto mide
+# la CONSECUENCIA sobre el texto que de verdad se publicó: ¿lo que el título
+# promete en su cláusula resolutiva se narra en algún sitio del cuerpo?
+#
+# Caso real: `video_007` anuncia "...Pero El Notario Descubrió La Coacción Y
+# Anuló Todo" y `anul-` aparece CERO veces fuera del título.
+#
+# Determinista (§18 -- un juicio que el modelo no puede dar se vuelve
+# determinista o hueco): se aísla la cláusula tras el ÚLTIMO conector
+# adversativo/temporal del título (acotada a `_COHERENCIA_MAX_PALABRAS` para
+# no arrastrar la descripción de ambiente que a veces sigue a la cláusula
+# real -- medido: sin este tope, un título con "...pero no sabía que había
+# grabado la conversación... Y ESA FRASE RETUMBÓ EN MI CABEZA MIENTRAS EL
+# SILENCIO SE APODERABA DE LA SALA DECORADA CON LUCES... Y EL OLOR A PAVO
+# ASADO..." diluye el ratio con palabras de atrezzo que nunca se repiten ni
+# en una historia SANA). Se comparan RAÍCES (prefijo de 5, no forma exacta:
+# "anuló"/"anulación"/"anular" comparten raíz), y solo se cuentan las que
+# reaparecen FUERA de la frase-título.
+#
+# CALIBRACIÓN (medida sobre el corpus real en disco, 14-ago-2026):
+#   historias SANAS (título forzado al inicio, resolución confirmada a mano
+#   palabra por palabra vía grep -- `data/evidence/video_001_story.txt` y las
+#   dos historias de PRODUCCIÓN real que quedan en `temp/`):
+#     ratio  0.67 / 1.00 / 1.00
+#   `video_007` (el caso roto que motiva este check):
+#     ratio  0.50
+#   Otros truncados severos del mismo fixture E2E (test_e2e/temp/video_00{1,2,4,6}),
+#   con la MISMA forma del defecto (descarte >70% del CUERPO), para contraste:
+#     ratio  0.50 / 0.20 / 0.50 / 0.00
+# Separación con margen de 0.17 (0.67 sano vs 0.50 roto). Umbral en el punto
+# medio, 0.60. Con menos de `_COHERENCIA_MIN_CLAVES` palabras de contenido
+# extraídas de la cláusula (título sin conector reconocible, o cláusula muy
+# corta -- 2 de los casos anteriores caen aquí) el check SE ABSTIENE: no hay
+# señal suficiente para juzgar, mismo patrón que `_validar_puntuacion` en
+# `script_generator` cuando el texto es demasiado corto.
+_RE_CONECTOR_RESOLUCION = re.compile(r"\b(pero|aunque|hasta que)\b", re.IGNORECASE)
+_COHERENCIA_MAX_PALABRAS = 12
+_COHERENCIA_MIN_CLAVES = 3
+_COHERENCIA_MIN_RATIO = 0.60
+# Auxiliares/relleno narrativo que aparecen en CASI cualquier frase de este
+# género (verbos "haber"/"saber"/"tener" en pasado, atrezzo de escena) y que
+# NO discriminan si la escena de resolución se narró o no -- medido: sin
+# excluirlos, una historia SANA caía al mismo ratio que una rota porque
+# ambas comparten "mientras", "cabeza", "siempre"... en cualquier párrafo.
+_COHERENCIA_STOP_EXTRA = frozenset((
+    "habia", "sabia", "tenia", "contaba", "aquello", "aquella", "completo",
+    "siempre", "cara", "mientras", "cabeza", "frase", "frases", "momento",
+    "instante", "esa", "ese", "esta", "este", "ante", "donde",
+    "toda", "todo", "todos", "todas",
+))
+
+
+def _coherencia_norm_stem(w):
+    import unicodedata
+    w = w.lower()
+    w = "".join(c for c in unicodedata.normalize("NFD", w) if unicodedata.category(c) != "Mn")
+    w = re.sub(r"[^a-z]", "", w)
+    return w[:5] if len(w) > 5 else w
+
+
+def _clausula_resolutiva(titulo, max_palabras=_COHERENCIA_MAX_PALABRAS):
+    """La cláusula tras el ÚLTIMO conector adversativo/temporal del título,
+    acotada a `max_palabras`. `None` si no hay conector reconocible."""
+    matches = list(_RE_CONECTOR_RESOLUCION.finditer(titulo))
+    if not matches:
+        return None
+    resto = titulo[matches[-1].end():]
+    palabras = resto.split()[:max_palabras]
+    return " ".join(palabras) if palabras else None
+
+
+def coherencia_titulo_cuerpo(story_path):
+    """¿Lo que el título promete en su cláusula resolutiva se narra en el cuerpo?
+
+    Devuelve `(bool|None, motivo, ratio|None)`. Ver la calibración completa
+    junto a las constantes de arriba.
+    """
+    from modules.script_generator import _ES_FUNCIONALES
+
+    texto = open(story_path, encoding="utf-8").read()
+    m = re.search(r"[.!?]", texto)
+    if not m:
+        return None, "el guion no tiene ni una frase completa: no se puede aislar el título", None
+    titulo = texto[:m.end()].rstrip(".!?")
+    cuerpo = texto[m.end():]
+
+    clausula = _clausula_resolutiva(titulo)
+    if clausula is None:
+        return None, ("título sin cláusula resolutiva reconocible (sin "
+                      "'pero'/'aunque'/'hasta que'): no se puede comprobar"), None
+
+    claves = [
+        w for w in re.findall(r"[a-záéíóúñü]+", clausula.lower())
+        if w not in _ES_FUNCIONALES and w not in _COHERENCIA_STOP_EXTRA and len(w) >= 4
+    ]
+    if len(claves) < _COHERENCIA_MIN_CLAVES:
+        return None, (
+            f"cláusula resolutiva con solo {len(claves)} palabra(s) de contenido "
+            f"(mínimo {_COHERENCIA_MIN_CLAVES}): no hay señal suficiente para juzgar"
+        ), None
+
+    stems_clave = {_coherencia_norm_stem(w) for w in claves}
+    stems_cuerpo = {_coherencia_norm_stem(w) for w in re.findall(r"[a-záéíóúñü]+", cuerpo.lower())}
+    encontrados = stems_clave & stems_cuerpo
+    ratio = len(encontrados) / len(stems_clave)
+
+    if ratio < _COHERENCIA_MIN_RATIO:
+        faltan = sorted(stems_clave - encontrados)
+        return False, (
+            f"el título promete «...{clausula.strip()}» pero solo el {ratio:.0%} de sus "
+            f"palabras de contenido reaparece en el cuerpo narrado (raíces ausentes: "
+            f"{', '.join(faltan)}) -- la resolución probablemente NO se narra "
+            f"(clase [TRUNCA-01])"
+        ), ratio
+    return True, f"{ratio:.0%} de la cláusula resolutiva reaparece en el cuerpo narrado", ratio
+
+
 def ngramas_repetidos(texto, n=12):
     w = texto.split()
     vistos, dups = {}, []
@@ -448,6 +620,17 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         if not cerrado:
             fallos.append("la historia se publicó SIN desenlace")
 
+    # --- [TRUNCA-01] el truncado mutiló el CUERPO (la causa)
+    truncado_ok, motivo_trunc, _frac_trunc = truncado_narrativo(
+        _busca_pipeline_log(os.path.dirname(ass) or "."),
+        os.path.basename(video)[: -len("_final.mp4")])
+    if truncado_ok is None:
+        print(f"{AVISO} truncado narrativo: {motivo_trunc}")
+    else:
+        print(f"{OK if truncado_ok else MAL} truncado narrativo: {motivo_trunc}")
+        if not truncado_ok:
+            fallos.append(f"truncado mutilante: {motivo_trunc}")
+
     # --- basura del modelo y párrafos repetidos, sobre el guion real
     if story and os.path.exists(story):
         texto = open(story, encoding="utf-8").read()
@@ -460,6 +643,18 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
                 fallos.append(f"basura del modelo: {motivo}")
         except Exception as e:
             print(f"{AVISO} no se pudo comprobar la basura: {e}")
+
+        # --- [TRUNCA-01] coherencia título <-> cuerpo (la consecuencia)
+        try:
+            coherente, motivo_coh, _ratio_coh = coherencia_titulo_cuerpo(story)
+            if coherente is None:
+                print(f"{AVISO} coherencia título/cuerpo: {motivo_coh}")
+            else:
+                print(f"{OK if coherente else MAL} coherencia título/cuerpo: {motivo_coh}")
+                if not coherente:
+                    fallos.append(f"coherencia título/cuerpo: {motivo_coh}")
+        except Exception as e:
+            print(f"{AVISO} no se pudo comprobar la coherencia título/cuerpo: {e}")
 
         # [BASURA-03]: el modelo se auto-audita en un BLOQUE de markdown al
         # final ("**Resumen de los elementos solicitados incluidos:** 1.
