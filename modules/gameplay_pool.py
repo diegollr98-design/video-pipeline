@@ -151,9 +151,33 @@ def add_to_pool(video_path, config, is_original=False):
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
+        # [DISCO-01] La salida A MEDIAS no puede quedarse en el pool. Medido el
+        # 15-ago-2026: ffmpeg murió con `No space left on device` tras escribir
+        # 2,7 GB y dejó un `pool_0002.mp4` sin `moov atom`. Nadie lo detectó al
+        # crearlo: se quedó en la cola, ensuciando CADA corrida posterior con un
+        # WARNING por lectura, y `take_chunk` acabó reventando con un traceback
+        # sin capturar al intentar medir el chunk que salió de él.
+        # Un fichero truncado en la cola de trabajo es peor que no tenerlo (§13).
+        if os.path.exists(dest):
+            try:
+                os.remove(dest)
+                logger.warning(f"Borrada la salida truncada {os.path.basename(dest)}: "
+                               f"una recodificacion fallida NO entra en el pool")
+            except OSError as e:
+                logger.error(f"No se pudo borrar la salida truncada {dest}: {e}")
         raise RuntimeError(f"Error re-encoding to pool: {result.stderr[-500:]}")
 
-    duration = get_video_duration(dest)
+    # Y aunque ffmpeg diga que fue bien: si el resultado no se puede leer, no
+    # entra. `returncode == 0` no garantiza un fichero válido — es la misma
+    # lección que el demuxer `concat`, que terminaba sin error y nunca funcionó.
+    try:
+        duration = get_video_duration(dest)
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise RuntimeError(
+            f"La recodificacion termino sin error pero el fichero no es "
+            f"legible ({e}). Borrado: no entra en el pool.")
     src_size = os.path.getsize(video_path) / (1024 * 1024)
     dst_size = os.path.getsize(dest) / (1024 * 1024)
     logger.info(f"Pool: {os.path.basename(dest)} ({duration:.0f}s / {duration/60:.1f} min) — {src_size:.0f}MB -> {dst_size:.0f}MB")

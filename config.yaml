@@ -9,7 +9,14 @@ paths:
   # así que una absoluta funciona sin tocar nada más.
   input_dir: "D:/YOUTUBE_media/input"
   output_dir: "./output"
-  temp_dir: "./temp"
+  # También en D: [DISCO-01]. La ingesta escribe en `temp/` una copia del vídeo
+  # a TAMAÑO COMPLETO (13,8 GB para un fuente de 12,9 GB) incluso cuando el
+  # vídeo es "100% gameplay" y solo recorta los extremos. Sumada al pool
+  # recodificado (2,9 GB), una corrida necesita ~17 GB de scratch, no los ~12
+  # que decía la doc. Medido el 15-ago-2026: con 16 GB libres, ffmpeg murió con
+  # `No space left on device` a mitad de la recodificación y dejó un
+  # `pool_0002.mp4` TRUNCADO que ningún guardia detectó.
+  temp_dir: "D:/YOUTUBE_media/temp"
   pool_dir: "./pool"             # gameplay limpio listo para usar
   prompt_template: "./prompts/reddit_story.txt"
   short_prompt: "./prompts/short_story.txt"
