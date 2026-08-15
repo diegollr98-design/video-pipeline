@@ -464,6 +464,11 @@ def main():
 
     ultimo_chunk_dur = None
     stems_producidos = []
+    # Cuántas veces se TOMÓ un chunk y se intentó producir. Distingue "no había
+    # gameplay que procesar" (0 vídeos legítimo) de "lo intenté y fallé"
+    # (0 vídeos = fallo). Sin esta distinción no se puede devolver un código de
+    # salida honesto: ver el comentario del `return` al final de la función.
+    intentos = 0
     while True:
         # [DRYRUN-01] `take_chunk` CONSUME el pool: borra del disco los ficheros
         # que selecciona. En dry-run no se produce ningún vídeo, así que hacerlo
@@ -475,6 +480,7 @@ def main():
             logger.info("No hay suficiente gameplay en el pool para otro video")
             break
         ultimo_chunk_dur = chunk_duration
+        intentos += 1
 
         try:
             if produce_video(chunk_path, chunk_duration, video_num, config, args):
@@ -541,6 +547,25 @@ def main():
         cleanup_temp(config)
         logger.info("Archivos temporales limpiados")
 
+    # CÓDIGO DE SALIDA HONESTO. `main()` no devolvía nada, así que el proceso
+    # salía SIEMPRE con 0 — incluida la corrida del 15-ago-2026, que tomó un
+    # chunk de 33,4 min, se comió 16 min de ingesta y recodificación por GPU, y
+    # murió con `0 videos producidos` porque el proveedor del modelo devolvía
+    # 504/404. Exit 0 = "todo bien" para `daily-run`, para un cron y para
+    # cualquier script que encadene. Es la misma clase que [GATE-04] en el
+    # auditor: fallar ABIERTO, o sea dar la nota perfecta por no haber hecho nada.
+    #
+    # 0 vídeos NO siempre es un fallo: con el pool vacío no hay nada que
+    # producir y eso es una corrida legítima. Lo que distingue un caso del otro
+    # es si se llegó a INTENTAR.
+    if intentos and not success:
+        logger.error(
+            f"Se intentaron {intentos} video(s) y no se produjo NINGUNO. "
+            f"La corrida ha FALLADO (salida 1): no la trates como exitosa."
+        )
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
