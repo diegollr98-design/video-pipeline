@@ -12,6 +12,7 @@ Pool dir contiene archivos .mp4 numerados cronológicamente.
 import logging
 import os
 import glob
+import shutil
 import subprocess
 import time
 
@@ -34,6 +35,30 @@ def _next_pool_name(pool_dir):
             pass
     next_num = max(nums) + 1 if nums else 1
     return os.path.join(pool_dir, f"pool_{next_num:04d}.mp4")
+
+
+def devolver_al_pool(chunk_path, config):
+    """Devuelve al pool un chunk cuya producción falló. [CHUNK-01]
+
+    `take_chunk` saca el material del pool ANTES de que se genere la historia,
+    así que cualquier fallo aguas abajo (el proveedor del modelo caído, un TTS
+    que revienta, una composición que falla) destruía una ingesta entera. El
+    chunk ya está en el formato del pool: devolverlo es un `move`, no un
+    reprocesado, y la siguiente corrida lo retoma como si nada.
+
+    Se le da un nombre NUEVO en vez de reutilizar el suyo para no pisar un
+    `pool_XXXX.mp4` que exista (el sobrante de un `take_chunk` que sí partió el
+    fichero vive ahí con esa misma numeración).
+
+    Devuelve la ruta destino. Propaga si no puede: perder el chunk en silencio
+    es exactamente lo que esta función viene a evitar.
+    """
+    pool_dir = config["paths"]["pool_dir"]
+    os.makedirs(pool_dir, exist_ok=True)
+    destino = _next_pool_name(pool_dir)
+    shutil.move(chunk_path, destino)
+    logger.info(f"Chunk devuelto al pool: {os.path.basename(destino)}")
+    return destino
 
 
 def _split_video(video_path, split_at_seconds, part1_path, part2_path):

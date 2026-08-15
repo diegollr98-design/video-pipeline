@@ -14,7 +14,8 @@ from modules.tts_engine import run_tts
 from modules.subtitle_builder import vtt_to_ass
 from modules.video_composer import compose
 from modules.video_cleaner import clean_gameplay
-from modules.gameplay_pool import add_to_pool, take_chunk, get_pool_status
+from modules.gameplay_pool import (add_to_pool, take_chunk, get_pool_status,
+                                   devolver_al_pool)
 from modules.thumbnail_generator import generate_thumbnail, generate_title_card
 from modules.shorts_generator import generate_short
 from modules import competitor_scout, trend_advisor
@@ -482,8 +483,10 @@ def main():
         ultimo_chunk_dur = chunk_duration
         intentos += 1
 
+        ok_video = False
         try:
             if produce_video(chunk_path, chunk_duration, video_num, config, args):
+                ok_video = True
                 success += 1
                 stems_producidos.append(f"video_{video_num:03d}")
 
@@ -508,7 +511,37 @@ def main():
             # Cleanup chunk. En dry-run `chunk_path` es `DRY_RUN_CHUNK`, que no
             # existe en disco a propósito: este borrado no encuentra nada.
             if os.path.exists(chunk_path):
-                os.remove(chunk_path)
+                if ok_video or args.dry_run:
+                    os.remove(chunk_path)
+                else:
+                    # [CHUNK-01] El chunk se saca del pool ANTES de generar la
+                    # historia, así que un fallo aguas abajo lo borraba y se
+                    # llevaba por delante toda la ingesta. Medido el 15-ago-2026:
+                    # 13.207 MB analizados frame a frame y recodificados a 3.522
+                    # MB, ~16 min de reloj, tirados porque el proveedor del
+                    # modelo devolvía 504. El gameplay original se salvó de pura
+                    # suerte (seguía en `input/`); con un `input/` ya consumido se
+                    # habría destruido.
+                    #
+                    # Devolverlo al pool es lo correcto: el pool ES la cola de
+                    # trabajo pendiente y el chunk ya tiene su formato. La
+                    # siguiente corrida lo retoma sin re-ingestar nada.
+                    try:
+                        destino = devolver_al_pool(chunk_path, config)
+                        logger.warning(
+                            f"El video fallo: el chunk vuelve al pool como "
+                            f"{os.path.basename(destino)} en vez de borrarse "
+                            f"({chunk_duration/60:.1f} min de gameplay ya ingestado "
+                            f"que NO hay que volver a procesar)"
+                        )
+                    except Exception as e:
+                        # Si no se puede devolver, se dice y se CONSERVA en temp:
+                        # perder el chunk en silencio es justo lo que se viene a
+                        # evitar (§13).
+                        logger.error(
+                            f"No se pudo devolver el chunk al pool ({e}). Se "
+                            f"CONSERVA en {chunk_path} para no perder la ingesta.",
+                            exc_info=True)
 
         if args.dry_run:
             # OBLIGATORIO, no cosmético: en dry-run el pool no se consume, así

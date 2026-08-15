@@ -42,7 +42,57 @@ def _load_prompt_template(path):
 
 
 def _call_openrouter(messages, config, max_tokens=None):
-    """Send messages to OpenRouter and return response text.
+    """Costura ÚNICA hacia OpenRouter, con cadena de modelos de reserva.
+
+    Prueba el modelo principal y, SOLO si agota sus reintentos, baja a los
+    `fallback_models`. En el camino feliz no cuesta ni una petición extra.
+
+    Por qué existe [MODELO-01]: el 15-ago-2026 el proveedor del modelo principal
+    devolvió `504` y luego `404 "Provider returned error"` en los 5 reintentos, y
+    la corrida de producción murió con **0 vídeos** después de gastar 16 min de
+    ingesta y recodificación por GPU. Una hora después el mismo modelo respondía
+    `200`: era transitorio y no había forma de sortearlo. Un pipeline autónomo no
+    puede quedarse sin salida porque un proveedor tenga un mal rato.
+
+    Lo que hace SEGURO bajar a un modelo no validado contra el prompt real NO es
+    confiar en él: es que `_validar_salida`, `_parse_title_and_speech` y
+    `_detectar_basura` siguen en vigor y rechazan su salida igual que la del
+    principal (§17). El coste peor caso —solo cuando todo va mal— es
+    `1 x max_retries + n x fallback_retries` peticiones en vez de `max_retries`.
+    """
+    or_config = config.get("openrouter", {})
+    principal = or_config.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free")
+    reintentos = max(1, int(or_config.get("max_retries", 3)))
+    fb_reintentos = max(1, int(or_config.get("fallback_retries", 2)))
+    cadena = [(principal, reintentos)]
+    for m in (or_config.get("fallback_models") or []):
+        if m and m != principal:
+            cadena.append((m, fb_reintentos))
+
+    errores = []
+    for pos, (modelo, n) in enumerate(cadena):
+        if pos:
+            # Ruidoso a propósito: qué modelo escribió un vídeo es un dato que
+            # hace falta para diagnosticarlo después (§13).
+            logger.warning(
+                f"OpenRouter: el modelo '{cadena[pos - 1][0]}' agotó sus intentos. "
+                f"BAJANDO al modelo de reserva '{modelo}' ({n} intentos). "
+                f"La salida se valida con los mismos guardias."
+            )
+        try:
+            return _call_openrouter_un_modelo(messages, config, modelo, n, max_tokens)
+        except RuntimeError as e:
+            errores.append(f"{modelo}: {e}")
+
+    raise RuntimeError(
+        "OpenRouter falló con TODOS los modelos de la cadena "
+        f"({len(cadena)}): " + " | ".join(errores)
+    )
+
+
+def _call_openrouter_un_modelo(messages, config, modelo, reintentos, max_tokens=None):
+    """Un solo modelo, con sus reintentos. No la llames directamente: usa
+    `_call_openrouter`, que es la costura con la cadena de reserva.
 
     Reintenta los fallos transitorios (honra `openrouter.max_retries`), incluido
     el caso de un 200 SIN 'choices': los modelos del tier gratuito devuelven a
@@ -57,9 +107,9 @@ def _call_openrouter(messages, config, max_tokens=None):
         )
 
     or_config = config.get("openrouter", {})
-    model = or_config.get("model", "nvidia/nemotron-3-ultra-550b-a55b:free")
+    model = modelo
     temperature = or_config.get("temperature", 0.9)
-    max_retries = max(1, int(or_config.get("max_retries", 3)))
+    max_retries = max(1, int(reintentos))
 
     payload = {"model": model, "messages": messages, "temperature": temperature}
 
@@ -90,7 +140,12 @@ def _call_openrouter(messages, config, max_tokens=None):
             continue
 
         # 429 y 5xx son transitorios (los modelos free se saturan a menudo).
-        if resp.status_code in (408, 429, 500, 502, 503, 520, 524):
+        # 504 y 522 FALTABAN. Los destapó el test de la cadena de modelos: con un
+        # 504 el bucle no reintentaba ni una vez, salía por el `raise` de abajo.
+        # 504 (Gateway Timeout) y 522 (Connection Timed Out de Cloudflare) son
+        # tan transitorios como el 524 que sí estaba, y 504 es justo lo que
+        # devolvió el proveedor en la caída del 15-ago que mató una corrida.
+        if resp.status_code in (408, 429, 500, 502, 503, 504, 520, 522, 524):
             last_error = f"HTTP {resp.status_code}: {resp.text[:150]}"
             continue
 

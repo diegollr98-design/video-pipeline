@@ -24,8 +24,32 @@ openrouter:
   # Alternativa descartada: inclusionai/ling-3.0-flash:free (rápido pero no separa
   # título y speech, y el parser se traga el primer párrafo entero como título).
   model: "nvidia/nemotron-3-ultra-550b-a55b:free"
+  # LIFEBOAT, no alternativas equivalentes. El 15-ago-2026 el proveedor del
+  # modelo principal (Nvidia) devolvió 504 y luego 404 "Provider returned error"
+  # en los 5 reintentos: la corrida de producción murió con 0 vídeos DESPUÉS de
+  # gastar 16 min de ingesta y recodificación por GPU. Una hora más tarde el
+  # mismo modelo respondía 200: era transitorio, y no había forma de sortearlo.
+  #
+  # Solo se usan cuando el principal AGOTA sus reintentos, así que en el camino
+  # feliz no cuestan ni una petición extra. Verificados vivos el 15-ago
+  # (HTTP 200): `dots-studio` es de OTRO proveedor —que es el punto, porque el
+  # fallo fue del proveedor, no del modelo— y `nemotron-3-super` es el mismo
+  # proveedor pero distinto endpoint, así que va el último.
+  #
+  # ⚠️ NO están validados contra el prompt real como sí lo está el principal
+  # (`inclusionai/ling-3.0-flash:free` se descartó porque no separaba título y
+  # speech y el parser se tragaba 543 palabras como título). Lo que los hace
+  # seguros NO es confiar en ellos: es que `_validar_salida`,
+  # `_parse_title_and_speech` y `_detectar_basura` siguen en vigor y rechazan
+  # su salida igual que la del principal (§17). Si uno escribe basura, se ve.
+  fallback_models:
+    - "dots-studio/dots-3-note-preview:free"
+    - "nvidia/nemotron-3-super-120b-a12b:free"
   temperature: 0.9
   max_retries: 5   # el tier gratuito devuelve ResourceExhausted a menudo (visto en el E2E)
+  # Reintentos por modelo de RESERVA. Menos que el principal a propósito: son un
+  # bote salvavidas, y el coste peor caso es models x retries peticiones.
+  fallback_retries: 2
 
 tts:
   voice_male: "es-ES-AlvaroNeural"
