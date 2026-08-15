@@ -30,6 +30,15 @@ STORY = os.environ.get("ANCHOR_BENCH_STORY", "temp/video_001_story.txt")
 AUDIO = os.environ.get("ANCHOR_BENCH_AUDIO", "temp/video_001_audio.mp3")
 RAW = os.path.join(SCRATCH, "raw_words.json")
 
+# Cobertura mínima DENTRO de una ventana para darle veredicto. Por debajo, el
+# emparejador no ha visto bastante de esa ventana y su mediana es ruido, no
+# medida: se declara NO EVALUABLE en voz alta en vez de juzgarla o de saltarla
+# en silencio (que son las dos formas de fallar abierto). Ver el comentario
+# largo en `_informe`. 0,70 deja pasar la dispersión normal del referí
+# (las ventanas sanas de los 3 corpus van al 90-100%) y corta el caso medido
+# del 15-ago, que estaba al 56%.
+COBERTURA_VENTANA_MIN = 0.70
+
 
 def dump_raw():
     """Alineacion forzada CRUDA (antes del anclaje) sobre el audio real."""
@@ -247,9 +256,23 @@ def _informe(nombre, words, sentences, trans, zonas=(), calibrar=False):
 
     malas, medianas_v = [], []
     palabras_malas, segundos_malos = 0, 0.0
+    no_evaluables = []
     for s_start, idxs in vent:
         es = [err[i] for i in idxs if i in err]
-        if len(es) < 3:
+        # COBERTURA POR VENTANA, no solo un mínimo absoluto. `len(es) < 3` deja
+        # pasar una ventana de 32 palabras con 18 emparejadas (56%) y le da
+        # veredicto. Medido el 15-ago-2026 en el banco de producción: esa
+        # ventana exacta (t=811,97) salió con "mediana −2,409 s", que parecía el
+        # peor defecto de toda la corrida — y era FALSO. `silencedetect`
+        # (independiente de Whisper) puso 6,45 s de voz dentro de los 7,10 s del
+        # span de subtítulos, y el `SentenceBoundary` de edge-tts coincidía con
+        # el arranque al milisegundo. El emparejador estaba enganchando
+        # ocurrencias lejanas en el 44% sin emparejar: [INSTR-02] otra vez.
+        # La cobertura GLOBAL era 96,4% y no avisaba de nada; el agujero es local.
+        cob = len(es) / len(idxs) if idxs else 0.0
+        if len(es) < 3 or cob < COBERTURA_VENTANA_MIN:
+            if len(idxs) >= 5:
+                no_evaluables.append((s_start, len(idxs), cob))
             continue
         m = sorted(es)[len(es) // 2]
         medianas_v.append(m)
@@ -263,6 +286,14 @@ def _informe(nombre, words, sentences, trans, zonas=(), calibrar=False):
     print(f"  emparejadas {len(pares)}/{len(words)}  |err| medio {sum(todos)/len(todos):.3f}s  "
           f"p95 {_percentil(todos, 95):.3f}s  max {max(todos):.3f}s")
     print(f"  VENTANAS con |mediana| > 0.35 s: {len(malas)} de {len(medianas_v)} medibles")
+    if no_evaluables:
+        # Ruidoso a propósito: una ventana sin cobertura NO es una ventana sana,
+        # es una ventana sin medir, y la diferencia es justo lo que hay que
+        # proteger (§16 / [GATE-04]).
+        peor = sorted(no_evaluables, key=lambda x: x[2])[:3]
+        print(f"  !! {len(no_evaluables)} ventana(s) NO EVALUABLES por cobertura "
+              f"< {COBERTURA_VENTANA_MIN:.0%} (no son sanas: son SIN MEDIR): "
+              + ", ".join(f"t={s:.2f} ({n} pal, {c:.0%})" for s, n, c in peor))
     # La metrica que importa es cuanto VIDEO sale desincronizado, no cuantas
     # ventanas: una ventana de 95 palabras son 27 s de pantalla y una de 4 son 2.
     print(f"  --> PALABRAS afectadas: {palabras_malas}   SEGUNDOS de video: {segundos_malos:.1f}s")
