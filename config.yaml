@@ -1,7 +1,13 @@
 # === YouTube Automation Config ===
 
 paths:
-  input_dir: "./input"
+  # El gameplay crudo vive en D: desde el 14-ago-2026: son 13,2 GB y C: se
+  # quedaba en 9 GB libres, cuando una corrida larga pide ~12 (y esta misma
+  # sesión vio el disco caer 8 GB de golpe). D: tiene 715 GB. Movido con copia
+  # verificada por md5 (3bd180e42856978ee4ca0436d260268d) ANTES de borrar el
+  # original. `ensure_dirs` y el glob de `main.py:435` usan la ruta tal cual,
+  # así que una absoluta funciona sin tocar nada más.
+  input_dir: "D:/YOUTUBE_media/input"
   output_dir: "./output"
   temp_dir: "./temp"
   pool_dir: "./pool"             # gameplay limpio listo para usar
