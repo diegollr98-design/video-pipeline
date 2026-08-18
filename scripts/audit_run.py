@@ -244,6 +244,28 @@ def cierre_narrativo(log_path, stem):
     tramo = tramo.split("=== Completado")[0]
     if "pidiendo final" in tramo or "Cierre anadido" in tramo:
         return True, "el bloque de desenlace se pidio y se escribio"
+    # [GATE-06] El camino de un solo bloque (`_generar_historia_un_bloque`, para
+    # historias que caben en WORDS_PER_BLOCK) pide la historia COMPLETA —con
+    # desenlace— en la MISMA llamada, así que no hay ningún bloque de cierre que
+    # pedir aparte y no emite ninguna de las dos líneas de arriba. Sin esta rama
+    # el check FALLA sobre toda historia corta, incluida una que sí tiene final
+    # (`video_008`, verificado: termina en "Ahora duermo tranquilo...").
+    #
+    # Se comprueba por MARCADOR, no leyendo el guion: "¿este texto tiene un final
+    # satisfactorio?" es el juicio que §18 prohíbe pedirle a un heurístico, y un
+    # check que lo intentara pasaría siempre (clase [GATE-04]/[GATE-05]: fallar
+    # ABIERTO). El hecho determinista es el simétrico al del camino multi-bloque:
+    # allí se comprueba que el desenlace SE PIDIÓ; aquí, que se pidió COMPLETA en
+    # una sola llamada. Si además se hubiera quedado por debajo del 85% del
+    # objetivo, `generate_story` pide el cierre aparte y emite "Cierre anadido"
+    # (o aborta con RuntimeError y no hay vídeo que auditar), así que ese caso ya
+    # lo caza la rama de arriba.
+    #
+    # OJO: esto NO ablanda [CIERRE-01]. Esa clase vive en el bucle multi-bloque,
+    # que nunca emite esta línea, y allí el check conserva los dientes intactos.
+    if "cabe en un solo bloque" in tramo:
+        return True, ("la historia cabia en un bloque: se pidio COMPLETA con "
+                      "desenlace en una sola llamada")
     return False, ("la historia se cerro SIN bloque de desenlace: el bucle salio "
                    "por el 85% del objetivo (clase [CIERRE-01])")
 
