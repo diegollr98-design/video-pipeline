@@ -46,7 +46,7 @@ Todos los bugs graves de este repo produjeron **vídeos completos y reproducible
 - **Cerrar un cambio sensible sin medir la salida.** El demuxer `concat` estuvo roto **desde siempre** terminando sin error.
 - **Validar con `--no-shorts`.** Oculta una clase entera de fallos (los 4 shorts idénticos vivieron ahí).
 - **Confiar en que el modelo obedezca el prompt** para algo que importa. Se impone en código o no está.
-- **Borrar `pool/`, `input/`, `output/` o `test_e2e/clip.mp4`** — son horas de grabación y el fixture del gate.
+- **Borrar `pool/`, `input/`, `output/` o `test_e2e/input/clip.mp4`** — son horas de grabación y el fixture del gate. *(La ruta decía `test_e2e/clip.mp4`, que no existe: corregido el 18-ago con el OK de Diego — [DOC-02].)*
 - **Llamar a OpenRouter fuera de `_call_openrouter`** ni usar rutas relativas en un fichero de lista de `concat`.
 - **Silenciar errores** (`except: pass`, fallback mudo, un segmento fallido que igualmente entra en la lista). Log ruidoso + propagar + marcar la salida.
 - **Confundir `/api/v1/key` con el saldo** de OpenRouter (es el tope de gasto de la clave).
@@ -314,7 +314,10 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
   `_build_avoid_block`). `generate_short` ahora **devuelve el título** y
   `generate_shorts_for_video` lo acumula
 - También arrastra los títulos de shorts anteriores que sigan en `shorts_dir`, para que dos
-  corridas seguidas no produzcan lo mismo. Se limita a los 12 últimos para no inflar el prompt
+  corridas seguidas no produzcan lo mismo. La ventana son **`AVOID_VENTANA = 40`**
+  (`shorts_generator.py`), y la lee tanto el prompt como la siembra de `main.py`: decía "12" y
+  además ambos extremos estuvieron **desincronizados** (se sembraba con 8 y se consumía con 40),
+  lo que dejó pasar dos shorts con el mismo argumento [SHORTREP-01]
 - Ojo al validar shorts: correr con `--no-shorts` oculta esta clase de fallo por completo
 
 ### Shorts — generación
@@ -469,11 +472,15 @@ defectos que el fixture de 3 min **no puede ver** (`produccion-loop.md` §C):
 - **4 ventanas de anclaje con frases enteras ~1 s por detrás de la voz** (zona 1000-1040 s:
   **+1,050 s**, 90 de 125 palabras >0,5 s; control 300-340 s: −0,110 s) [ANCLA-01]
 
-> ⚠️ **[ANCLA-01] SIGUE VIVO.** Causa raíz localizada y validada por ejecución —
-> `tts_engine.py:458` traslada toda la ventana de anclaje usando UNA sola palabra, así que un
-> silencio mal alineado se convierte en retraso rígido para las ~95 siguientes. **Fix propuesto,
-> NO aplicado.** Cualquier vídeo largo que se genere hoy arrastra esto. Y `shorts_generator.py:295`
-> llama a la misma función: en un short de 1-3 ventanas, la mala deja el short entero por detrás.
+> ✅ **[ANCLA-01] ARREGLADO** (10 → 14-ago-2026, verificado 18-ago). El anclaje pasó por **tres**
+> versiones y a dos las tumbó la medición; la vigente distingue ancla corrupta de deriva del
+> alineador y trata la ventana aplastada ([ANCLA-02..06]). Medido contra transcripción
+> independiente en las dos producciones reales: palabras desincronizadas **204 → 9** y **73 → 0**,
+> p95 **1,010 → 0,283 s**, solapes 2 → 0. Última corrida del fixture (18-ago): medio **0,045 s**,
+> p95 0,090, **0 palabras >0,5 s tarde**.
+> ⚠️ Este aviso decía **"SIGUE VIVO … fix propuesto, NO aplicado"** y apuntaba a
+> `tts_engine.py:458`, donde hoy vive otra función. Llevaba días siendo falso: es [DOC-01] otra vez
+> —un dato caducado en un `.md` que se lee como hecho— dentro del propio fichero que lo denuncia.
 
 ### Lo que falta para que el pipeline esté FINALIZADO
 
