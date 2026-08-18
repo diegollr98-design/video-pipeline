@@ -14,6 +14,40 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v1.1 — 2026-08-18 — El SEED declaró fuera de cámara el plano que el guion SÍ graba ✅
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_grabar_video_portafolio.md`, cuyo
+objetivo era desbloquear la grabación del vídeo de portafolio. Sus **cinco** diagnósticos quedaron
+confirmados —el agente **ciego**, sin ver el SEED, llegó a los cinco por su cuenta— pero el panel
+tumbó su **plan**: su paso 0 ([GATE-06]) destruía su propio mejor plano, su paso 1 borraba artefactos
+irrecuperables, su plan B estaba roto y su paso 4 rompía `config.yaml`. Arreglado **[GATE-06]**;
+preservados los artefactos de `video_003`; el clip movido al disco correcto; **el guion corregido en
+15 sitios**. Nuevos: **[CONFIG-01]**, **[GATE-08]**, **[SEED-03]**.
+**Incidentes:** [GATE-06] (cerrado) [CONFIG-01] [GATE-08] [SEED-03].
+**Verificación:** [GATE-06] con A/B contra **casos de resultado conocido**, 0 peticiones: de los 8
+tramos reales de `pipeline.log` cambia **1 de 8** (`video_008` False→True, el falso positivo;
+`video_001..007` idénticos), y en 5 sintéticos el multi-bloque sin pedir final **sigue en False**, el
+tramo vacío también, y sin log / sin tramo siguen dando `None` (§16). `compileall` limpio.
+`AppTest`: 0 excepciones, 8 pestañas, el clip **ya aparece** en el desplegable de Operar y el pool
+imprime `Faltan 20.0 min`. Re-auditado `video_003` con la huella nueva (`bd2d8329f791` →
+`0e36ed4b5fd1`): reproduce sus 3 fallos **al dígito** — control del instrumento gratis. Cuota
+verificada con `GET /api/v1/credits` → `{total_credits: 10, total_usage: 0.0638}`.
+**Lo que esto enseña:** (a) **el fallo dominante estaba en la mitad del territorio que el SEED no
+verificó** — comprobó bien dónde se pinta el badge (`dashboard.py:903`) y no que el guion filma esa
+pestaña en un beat ★ del hero; lo destapó el ciego, y los 3 críticos que sí leyeron el SEED
+confirmaron la premisa falsa pero **ninguno la habría buscado**; (b) **el arreglo que el SEED pedía
+literalmente era un gate que falla ABIERTO**: "que reconozca el desenlace escrito en línea" = leer el
+guion y juzgar si tiene final, justo el juicio que §18 prohíbe y la 3.ª repetición de
+[GATE-04]/[GATE-05]; el fix bueno es de marcador; (c) **arreglar U0 no conseguía lo que U0 decía
+querer** — la corrida que se grabaría hoy falla por DOS cosas y la segunda ([TRUNCA-02], 29% de
+coherencia) es **verdadera**, así que el clímax sale rojo igual; (d) tocar el auditor **caduca los
+veredictos** por `_HUELLA_FUENTES`, efecto que ningún paso del SEED contemplaba.
+**Pendiente:** **grabar** (§0/§1/§2/§5/§6/§9 se pueden ya; §3/§4 necesitan bajar
+`target_duration_min` a 150 **a mano** y restaurar con `git checkout`). **[TRUNCA-02] sigue abierto**
+y es lo que dejará el veredicto en rojo: el arreglo de fondo es no sobrepasar en vez de recortar por
+el medio (`script_generator`, superficie sensible → `/eval`). No hay ningún clip con pausas en disco,
+así que el caption ★ de 1:45 se reescribió a lo que la pantalla demuestra. `sessions-log.md` en 345
+líneas con tope de 100 y 38 incidentes sin promover: el próximo `/optimize` es de poda.
+
 ## v1.0 — 2026-08-14 — Competencia: el subsistema no llegaba a los shorts… ni había llegado NUNCA a nada 🔶
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_C_competencia.md`. El agente **ciego**
 destapó lo que el SEED daba por sentado: `apply_to_prompt` **no se había ejecutado jamás** — no era "el

@@ -1,3 +1,36 @@
+> ## ⚠️ EJECUTADO Y CORREGIDO EL 2026-08-18 — NO LO VUELVAS A EJECUTAR TAL CUAL
+>
+> `/seed-review` TIER PANEL (1 agente **ciego** + 3 críticos). Veredicto: **✏️ CON EDICIONES**.
+> Sus cinco diagnósticos (U0, U1, U1b, U2, U3) quedaron **CONFIRMADOS por ejecución** — el agente
+> ciego, sin ver este SEED, llegó a los cinco por su cuenta. Lo que el panel tumbó fue su **plan**:
+>
+> 1. **Premisa FALSA que sostenía su análisis de [ANCLA-07]** — *"ningún beat filma la cola de subida
+>    ni el veredicto"*. §10 del guion (5:10, **★ del corte hero**) es literalmente *"Tab 📤 Subir …
+>    el plano es el veredicto del auditor junto al vídeo"*. Ver [SEED-03] del ledger.
+> 2. **Su paso 0 destruía su propio mejor plano.** `_HUELLA_FUENTES` incluye `audit_run.py`: tocarlo
+>    caduca los veredictos. Se arregló y **se re-auditó `video_003`** para devolverle uno válido.
+> 3. **Arreglar U0 NO pone verde el clímax.** La corrida real que se grabaría hoy termina con **dos**
+>    FALLA: `cierre narrativo` (falso, ya arreglado) **y** `coherencia título/cuerpo 29%`
+>    ([TRUNCA-02], **verdadero**). El SEED lo clasificó como *"riesgo bajo, plano de ~5 s"*.
+> 4. **U1b es evitable y dañino.** Su plan B (*"grabar §2 después de §4"*) está roto: `take_chunk`
+>    **borra** del pool lo que consume. Y pre-ingestar duplica el chunk (191→382 s, 9 shorts, ~1h20).
+>    **§2 se graba con el pool vacío**: su propia caption ya narra el déficit.
+> 5. **Su paso 4 rompe `config.yaml`** — guardar desde ⚙️ Config borra los ~70 comentarios de
+>    calibración, y el `.bak` se sobrescribe en el segundo guardado. Ver [CONFIG-01].
+>
+> **Huecos que el SEED no vio:** §6 filma un expander que no existe · §4 2:05 tiene un **segundo**
+> overlay de WPM falso · ningún clip disponible tiene pausas, así que el caption ★ de 1:45 filmaría
+> `Frames gameplay: 20/20` · la corrida de §4 borra `D:/temp` ([GATE-08]).
+>
+> **Datos suyos que resultaron falsos:** `HEAD bb341eb` (son 4 commits atrás) · *"653 palabras"* (el
+> chunk real son 191 s → **623**) · *"~7 peticiones, 2 bloques + 5 shorts"* (real: **5**, 1 bloque +
+> 4 shorts — se contradice con su propio U0) · *"150 → 195 → 160 → 187 → 196"* (real, verificado en
+> `git log -G`: **195 → 160 → 187 → 199 → 196**; el 150 nunca estuvo en `config.yaml`).
+>
+> **Lo hecho:** [GATE-06] arreglado y medido A/B · `video_003` re-auditado · artefactos preservados en
+> `D:/YOUTUBE_media/_preserve_video_003/` · clip copiado a `D:/YOUTUBE_media/input/` · **el guion del
+> portafolio corregido en 15 sitios**. Lo que queda es grabar: ver el checklist de la sesión.
+
 # SEED — Desbloquear la grabación del vídeo de YOUTUBE PIPELINE (portafolio)
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
