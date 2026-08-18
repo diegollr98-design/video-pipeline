@@ -307,11 +307,30 @@ _PUNTUACION_MIN_PALABRAS = 150
 #   video_001 CON partidor          26    69
 #   video_002 CON partidor          26    69
 #
-# Umbral 30: pasa lo que el código ya sabe arreglar y caza el texto que ni
-# partiendo frases se deja puntuar (sin conectores donde cortar). Es un backstop
-# del código, no un sustituto: la garantía la da el partidor (§17), y quien corta
-# de verdad es la medición ACÚSTICA del auditor.
-_PUNTUACION_P90_MAX = 30
+# RECALIBRADO 18-ago-2026: 30 -> 24. El 30 era INERTE por construcción y nunca
+# disparó en ninguna de las 9 corridas del log. Se puso mirando textos SIN
+# partidor de frases (p90 31-34), pero el mecanismo que se persigue respira cada
+# ~21 palabras, así que un umbral de 30 deja pasar justo la zona donde el defecto
+# vive. Medido sobre los 7 guiones del fixture con audio auditado, p90 con este
+# mismo instrumento (texto NARRADO) contra las pausas ACÚSTICAS del auditor:
+#
+#   guion       p90   comas/100   pausas inventadas /1000
+#   video_005    17      8.08        0.0
+#   video_006    17      6.84        0.0
+#   video_002    18      5.68        0.0
+#   video_004    18      7.28        0.0
+#   video_007    18      5.39        0.0
+#   video_008    23      2.78        3.3
+#   video_009    28      1.82       16.8   <- FALLA (máximo del auditor: 12.0)
+#
+# Máximo de los sanos 23, mínimo del roto 28: el 24 cae en el hueco y sale del
+# MECANISMO (respiro a ~21), no de ajustar a la corrida que falló. La zona 24-27
+# no está observada: se elige el lado conservador a propósito.
+# Coste: ~+0,2 peticiones por vídeo (2 de 9 guiones habrían reintentado), y
+# agotar reintentos NO aborta -- `_es_fallo_solo_puntuacion` acepta el mejor
+# intento. Es un backstop del código, no un sustituto: la garantía la da el
+# partidor (§17), y quien corta de verdad es la medición ACÚSTICA del auditor.
+_PUNTUACION_P90_MAX = 24
 
 # Prefijo del motivo, para que quien reintenta pueda distinguir "esto SOLO
 # falló por falta de comas" de cualquier otro motivo de rechazo (razonamiento

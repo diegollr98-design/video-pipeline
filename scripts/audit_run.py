@@ -680,10 +680,36 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
             coherente, motivo_coh, _ratio_coh = coherencia_titulo_cuerpo(story)
             if coherente is None:
                 print(f"{AVISO} coherencia título/cuerpo: {motivo_coh}")
+            elif coherente:
+                print(f"{OK} coherencia título/cuerpo: {motivo_coh}")
+            # Este check mide la CONSECUENCIA de [TRUNCA-01]: el truncado se
+            # llevó la resolución. Su señal es que las palabras de la cláusula
+            # resolutiva del título no reaparecen en el cuerpo... y esa señal
+            # NO distingue "no lo narra" de "lo narra con otras palabras".
+            # Medido sobre `video_009` (18-ago): el título prometía «el juez
+            # descubrió la estafa y lo mandó a la cárcel», el cuerpo narra «el
+            # magistrado leyó el dictamen pericial», «las grabaciones llegaron
+            # al juez» y «leyeron la sentencia de tres años de prisión» — la
+            # resolución se narra ENTERA, y el check cantó 40% porque el
+            # emparejado es por raíz de 5 caracteres y no sabe que prisión es
+            # cárcel. Falso positivo con `truncado narrativo` en OK y el log
+            # diciendo "esta historia no se truncó".
+            #
+            # Por eso BLOQUEA solo cuando hubo truncado, que es cuando el
+            # mecanismo que este check persigue puede haber ocurrido. Sin
+            # truncado no se puede haber comido nada, así que la discrepancia
+            # es paráfrasis mientras no se demuestre lo contrario: se AVISA.
+            # No es ablandar el gate — sigue bloqueando `video_008` (truncado
+            # del 21%, resolución de verdad ausente) y los 6 casos históricos,
+            # que son TODOS los verdaderos positivos observados.
+            elif not _frac_trunc:
+                print(f"{AVISO} coherencia título/cuerpo: {motivo_coh}")
+                print(f"{AVISO}   ...pero esta historia NO se truncó, así que no "
+                      f"bloquea: sin truncado la causa de [TRUNCA-01] no puede "
+                      f"haber ocurrido y el check no distingue paráfrasis")
             else:
-                print(f"{OK if coherente else MAL} coherencia título/cuerpo: {motivo_coh}")
-                if not coherente:
-                    fallos.append(f"coherencia título/cuerpo: {motivo_coh}")
+                print(f"{MAL} coherencia título/cuerpo: {motivo_coh}")
+                fallos.append(f"coherencia título/cuerpo: {motivo_coh}")
         except Exception as e:
             print(f"{AVISO} no se pudo comprobar la coherencia título/cuerpo: {e}")
 
