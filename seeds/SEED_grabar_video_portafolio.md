@@ -63,6 +63,26 @@ Copiar a `input/` como dice el guion **deja el clip donde el pipeline ya no mira
 ⚠️ `temp_dir` también se movió (`D:/YOUTUBE_media/temp`). Motivo en [DISCO-01]: la ingesta escribe una
 copia del vídeo a tamaño completo y pide **~17 GB**, no los ~12 que decía la doc.
 
+### U1b · §2 filmaría lo CONTRARIO de lo que narra: el pool está VACÍO
+El beat de 0:45 se para en *"🎮 Pool de gameplay … el mensaje **✅ Hay material suficiente para
+producir**"*. Medido ahora mismo con el código del dashboard:
+```
+archivos en el pool: 0      minutos totales: 0.0      minimo para producir: 20 min
+-> el dashboard dira: "NO hay material suficiente"
+```
+El pool se vació con las corridas del 15-ago (la última consumió `pool_0001` y la recodificación
+truncada `pool_0002` quedó apartada como `.CORRUPTO`, fuera del glob `*.mp4`).
+
+**Y hay un conflicto de ORDEN que el pre-flight no contempla:** §2 quiere un pool ya lleno, pero lo
+que lo llena es la ingesta… que es justo lo que graba §4. Si se filma en orden, §2 sale vacío.
+**Secuencia correcta:**
+1. copiar el clip a `D:/YOUTUBE_media/input/` (U1);
+2. bajar `target_duration_min` de 1200 a **150** en ⚙️ Config (200 s de clip ≥ 150 s → "hay
+   material"; con 1200 seguiría diciendo que no aunque el pool tenga el clip);
+3. **ingestar una vez ANTES de grabar**, para que §2 tenga qué enseñar;
+4. grabar §2 … y luego §4, cuya corrida en vivo ingesta otra copia.
+Alternativa: grabar §2 **después** de §4 y montarlo en su sitio.
+
 ### U2 · §7 grabaría un número que CONTRADICE su propio caption
 El beat de 4:05 se para en *"Palabras por minuto (WPM): **160**"*, con el caption
 `195 → 160 wpm · recalibrado` y un párrafo entero: *"este número es mi favorito porque estuvo mal"*.
@@ -134,7 +154,8 @@ Opciones, de más barata a más cara:
 ## 📋 Camino crítico sugerido (ordenado por coste, no por importancia)
 
 0. **U0** — [GATE-06], para que el clímax no grabe un falso negativo. *(pocas líneas)*
-1. **U1** — copiar el clip a `D:/YOUTUBE_media/input/` y corregir el pre-flight. *(5 min)*
+1. **U1 + U1b** — copiar el clip a `D:/YOUTUBE_media/input/`, bajar `target_duration_min` a 150 e
+   **ingestar una vez** para que §2 tenga pool que enseñar. Corregir esas líneas del pre-flight. *(15 min)*
 2. **U3** — actualizar las cifras del guion o marcarlas como "se lee de la toma". *(5 min)*
 3. **U2** — decisión de Diego sobre el beat de WPM. *(su llamada; no la ejecutes solo)*
 4. **Ensayo en seco del pre-flight entero** antes de encender la cámara: bajar
@@ -144,6 +165,14 @@ Opciones, de más barata a más cara:
 5. Solo si Diego lo pide: [ANCLA-07].
 
 ---
+
+## ✅ Verificado sano (no lo vuelvas a comprobar, no gastes tiempo)
+- **El dashboard arranca limpio**: `AppTest` → **0 excepciones**, **8 pestañas** (el guion dice 8: correcto).
+- Los 3 `st.error` que aparecen son los veredictos de los vídeos y viven **todos en 📤 Subir**, que el
+  guion NO graba. 🖼️ Resultados está limpio.
+- **§6 Competencia tiene datos**: `competitors.json` (380 KB), `competition_report.json`,
+  `competition_advice.json`. La tabla y el veredicto se pueden filmar.
+- **§5 tiene sus artefactos**: 3 miniaturas + 3 títulos en `output/`.
 
 ## ⚠️ Trampas ya pagadas — no las repitas
 
