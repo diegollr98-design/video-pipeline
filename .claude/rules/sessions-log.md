@@ -14,6 +14,39 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v1.2 — 2026-08-18 — El pipeline no estaba roto: tenía un guardia dormido ✅
+**Qué se hizo:** Diego paró el trabajo con *"no quiero grabar como sale en rojo, quiero grabar como sale
+bien el vídeo"* — y tenía razón: yo había encuadrado el rojo como "honesto" cuando un portafolio que
+enseña un output no publicable argumenta en contra. Se reordenó a **hacer que salga verde**. Cuatro
+corridas del fixture y tres defectos reales cerrados: **[COMA-05]** el guardia de puntuación estaba
+INERTE (p90 30, y edge-tts respira a 21: no disparó en 9 corridas); **[COHER-01]** el check de
+coherencia daba falso positivo por sinonimia; **[SHORTREP-01]** la ventana anti-repetición se sembraba
+con 8 y se consumía con 40. Antes, en la misma sesión: **[GATE-06]**.
+**Incidentes:** [GATE-06] (cerrado) [COMA-05] [COHER-01] [SHORTREP-01] [CONFIG-01] [GATE-08] [SEED-03].
+**Verificación:** `video_012` → **`VEREDICTO: sin defectos MEDIBLES`**, el primero limpio: sincronismo
+medio **0,045 s** / p95 0,090 / 0 palabras >0,5 s tarde, **pausas inventadas 16,8 → 0,0 por 1000**,
+comas/100 1,82 → 6,81, sin truncado, ratio 1,054. `output-audit` adversarial encargado de atacar los
+cambios del día: **el vídeo largo limpio en todos sus ejes** (0 solapes, conservación 568/568 palabras,
+0 pausas a mitad de sintagma, geometría correcta en los dos formatos) y su instrumento **calibrado**
+reproduciendo `video_006` al dígito.
+**Lo que esto enseña:** (a) **el umbral elegido en un hueco no observado es un umbral a ojo** — puse 24
+entre el máximo sano (23) y el roto (28) declarando que 24-27 no estaba medido, y la corrida siguiente
+cayó **justo en 24** y midió 12,0 pausas/1000: hubo que gastar una corrida para que el hueco dejara de
+serlo, y el valor bueno era 21; (b) **casi debilito el gate por la razón equivocada**: acepté que el
+check de coherencia estaba mal calibrado por longitud, monté el control… y **mi propio control lo
+refutó** (el recorte se llevaba los stems de verdad); la causa real —sinonimia— solo se vio LEYENDO el
+texto; (c) **[SHORTREP-01] lo cazó el `output-audit` comparando argumentos**, no cadenas: el gate canta
+`títulos únicos 27/27` y dos historias idénticas con títulos distintos pasan siempre.
+**Pendiente:** **el arreglo de hoy cegó a su propio detector** — `audit_run.py:539` mide
+`exceso = max(0, silencios − signos)`, y con p90=21 todo guion aceptado trae 60-70 signos contra 40-54
+silencios, así que da **0 por construcción**: ese `OK pausas inventadas` ya no informa (medición
+posicional independiente encuentra 4 pausas reales en `video_005`, donde el repo dice 0). **[TRUNCA-02]
+sigue abierto** (1 de 3 corridas: si el modelo pasa de 747 palabras el truncado corta por el medio y se
+lleva el clímax). **[SHORTDUR-01] empeora**: `short_032` dura **22,5 s** contra los 60-90 de la spec.
+La intro empieza a desvanecerse ~0,2 s antes de que el narrador acabe el título (`video_composer.py:98`,
+`title_end - 0.3`). No hay producción larga nueva: los tres vídeos de 30 min de `output/` son ANTERIORES
+a estos arreglos.
+
 ## v1.1 — 2026-08-18 — El SEED declaró fuera de cámara el plano que el guion SÍ graba ✅
 **Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_grabar_video_portafolio.md`, cuyo
 objetivo era desbloquear la grabación del vídeo de portafolio. Sus **cinco** diagnósticos quedaron
