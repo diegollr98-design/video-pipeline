@@ -105,8 +105,10 @@ Medido sobre el `.ass`: **33 cues de 6203 (0,5%)**, en dos rachas (`t=161,04` co
 **Por qué NO bloquea la grabación** (compruébalo en el careo de cierre, no lo des por hecho):
 - §5 (3:06) manda abrir el vídeo y ver fotograma a fotograma **un punto con voz**. Vale cualquiera de
   los 33,5 min sanos. **Evita t=161-173.**
-- §8 (CLÍMAX, 4:20) graba `/eval` sobre `test_e2e/`, **no** el auditor sobre producción. El último
-  `/eval` (`data/eval/2026-08-14-postfix-ancla06.json`) dio **PASA**.
+- §8 (CLÍMAX, 4:20) graba `/eval` sobre `test_e2e/`, **no** el auditor sobre producción, así que
+  [ANCLA-07] no sale ahí. ⚠️ Pero **§8 tiene su propio problema, y es U0**: ese `/eval` cantaría el
+  falso negativo de [GATE-06]. El PASA de `data/eval/2026-08-14-postfix-ancla06.json` corrió con
+  "~2 bloques", **antes** de que `8e522fa` quitara el suelo: no representa lo de hoy.
 - Ningún beat filma la cola de subida ni el veredicto de producción.
 
 **Pero hay un problema de VERDAD que Diego debe decidir**, y es del tipo que su propio portfolio
