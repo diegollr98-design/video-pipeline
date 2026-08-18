@@ -11,7 +11,40 @@ Todo lo que no sirva a eso HOY es ruido. **No abras ciclos de fix largos.**
 
 ---
 
-## 🔴 LO MÁS URGENTE: el pre-flight del guion ya NO funciona
+## 🔴 U0 · [GATE-06] dispara un FALSO NEGATIVO justo en el CLÍMAX (§8)
+
+**Es lo más urgente de todo el seed.** Cadena verificada:
+```
+§4 graba el clip de 200 s -> 653 palabras (a target_wpm=196)
+num_blocks = max(1, (653+1999)//2000) = 1   -> UN bloque
+audit_run.cierre_narrativo() decide si hay desenlace BUSCANDO EN pipeline.log
+que se pidiera el bloque de cierre. El camino de un bloque escribe el
+desenlace DENTRO de la misma llamada y no emite esa linea.
+   -> "FALLA cierre narrativo" sobre un video que SI tiene final
+```
+El suelo de 2 bloques lo quito **`8e522fa` (fix de [TRUNCA-01], 14-ago)**, DESPUES del ultimo `/eval`
+verde — que corrio con "~2 bloques". **Ese verde no representa lo que pasaria hoy en camara.**
+
+**Por que importa tanto:** el §8 es el CLIMAX y graba `/eval` **ejecutandose en camara**, con el
+caption *"Si un cambio empeora el baseline, no se cierra. No es un aviso: es un no."* Filmarias el
+gate cantando un fallo falso en el beat que argumenta que el gate no miente.
+
+**Arreglo (pocas lineas):** que `cierre_narrativo()` reconozca el desenlace **escrito en linea**, en
+vez de depender de una linea de log que el camino nuevo ya no emite. Es la misma clase que [GATE-05b]:
+la capacidad cambia en un sitio y el check que la observa se queda anclado a la senal vieja.
+
+**Verificado que NO aparece en §5:** la tarjeta de Resultados vive en `tab_resultados`
+(`dashboard.py:484`) y el badge rojo del veredicto se pinta en `tab_subir` (`dashboard.py:903`), que
+el guion no graba. Resultados es seguro.
+
+### U0b · [TRUNCA-02] — riesgo bajo pero real en la misma toma
+En produccion real no se manifiesta (80% de coherencia titulo/cuerpo); **lo fabrica el fixture de
+3 min**, que es justo el que usa §4. El video producido en camara puede prometer en el titulo algo que
+no narra, y §5 filma el titulo completo en la tarjeta. Plano de ~5 s: riesgo bajo, pero no es cero.
+
+---
+
+## 🟠 U1-U3 · el pre-flight del guion ya NO funciona
 
 Tres desajustes entre lo que el guion manda y lo que el repo es HOY. **Los tres se arreglan en
 minutos, y sin ellos la toma de §4 no arranca o graba un dato falso.** Verificados por ejecución.
@@ -98,6 +131,7 @@ Opciones, de más barata a más cara:
 
 ## 📋 Camino crítico sugerido (ordenado por coste, no por importancia)
 
+0. **U0** — [GATE-06], para que el clímax no grabe un falso negativo. *(pocas líneas)*
 1. **U1** — copiar el clip a `D:/YOUTUBE_media/input/` y corregir el pre-flight. *(5 min)*
 2. **U3** — actualizar las cifras del guion o marcarlas como "se lee de la toma". *(5 min)*
 3. **U2** — decisión de Diego sobre el beat de WPM. *(su llamada; no la ejecutes solo)*
