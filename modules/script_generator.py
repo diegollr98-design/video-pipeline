@@ -323,14 +323,24 @@ _PUNTUACION_MIN_PALABRAS = 150
 #   video_008    23      2.78        3.3
 #   video_009    28      1.82       16.8   <- FALLA (máximo del auditor: 12.0)
 #
-# Máximo de los sanos 23, mínimo del roto 28: el 24 cae en el hueco y sale del
-# MECANISMO (respiro a ~21), no de ajustar a la corrida que falló. La zona 24-27
-# no está observada: se elige el lado conservador a propósito.
+# CORREGIDO EL MISMO DÍA, 24 -> 21. El 24 se eligió con la zona 24-27 SIN
+# observar, y la corrida siguiente (`video_010`) cayó justo en p90=24 y midió
+# 12.0 pausas/1000 -- exactamente el máximo del auditor, o sea que el 24 dejaba
+# pasar el defecto. Con ese dato la curva queda monótona y sin huecos:
+#
+#   p90 17-18 ->  0.0 pausas/1000   (5 guiones, todos limpios)
+#   p90 23    ->  3.3
+#   p90 24    -> 12.0               <- FALLA
+#   p90 28    -> 16.8               <- FALLA
+#
+# 21 es el ÚNICO corte que separa "0.0" de "todo lo demás", y coincide con el
+# mecanismo (edge-tts respira cada ~21 palabras). Rechaza p90 23/24/28, acepta
+# los cinco de 17-18.
 # Coste: ~+0,2 peticiones por vídeo (2 de 9 guiones habrían reintentado), y
 # agotar reintentos NO aborta -- `_es_fallo_solo_puntuacion` acepta el mejor
 # intento. Es un backstop del código, no un sustituto: la garantía la da el
 # partidor (§17), y quien corta de verdad es la medición ACÚSTICA del auditor.
-_PUNTUACION_P90_MAX = 24
+_PUNTUACION_P90_MAX = 21
 
 # Prefijo del motivo, para que quien reintenta pueda distinguir "esto SOLO
 # falló por falta de comas" de cualquier otro motivo de rechazo (razonamiento
