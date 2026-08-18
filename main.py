@@ -137,7 +137,10 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
     # Se arrastran también los títulos de shorts anteriores que sigan en disco,
     # para que dos corridas seguidas no produzcan lo mismo.
     shorts_dir = config["paths"].get("shorts_dir", "./shorts_tiktok")
-    for path in sorted(glob.glob(os.path.join(shorts_dir, "short_*_title.txt")))[-8:]:
+    # La ventana la define `shorts_generator` (AVOID_VENTANA): sembrar con
+    # MENOS de lo que el prompt consume deja titulos fuera en silencio.
+    from modules.shorts_generator import AVOID_VENTANA
+    for path in sorted(glob.glob(os.path.join(shorts_dir, "short_*_title.txt")))[-AVOID_VENTANA:]:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 titulo = f.read().strip()

@@ -101,6 +101,18 @@ def _es_fallo_local(motivo):
     )
 
 
+# Ventana de la lista anti-repeticion, EN UN SOLO SITIO a proposito.
+# `main.py` siembra esta lista con los titulos que ya hay en disco y esta
+# funcion la consume. El 2026-08-18 se descubrio que el consumidor se habia
+# ensanchado a 40 y el sembrador seguia en 8 (`sorted(...)[-8:]`), asi que la
+# proteccion ENTRE corridas era de 8 titulos y no de 40: `short_032` repitio el
+# argumento de `short_017` (mismo boleto premiado robado por un familiar varon,
+# mismo desenlace policial, misma CTA) porque `short_017` nunca llego a entrar
+# en el prompt. Clase "fix no propagado al gemelo" (decision-making.md 11).
+# Ahora los dos leen esta constante y no se pueden desincronizar.
+AVOID_VENTANA = 40
+
+
 def _build_avoid_block(avoid):
     """Bloque de prompt que lista lo ya generado para que no se repita.
 
@@ -122,7 +134,7 @@ def _build_avoid_block(avoid):
     # ENTRE corridas solo cubría los primeros.
     # 40 entradas × ~15 palabras ≈ 600 palabras de prompt: despreciable frente a
     # la historia, y cubre una tanda entera.
-    lineas = "\n".join(f"  {i}. {t}" for i, t in enumerate(avoid[-40:], 1))
+    lineas = "\n".join(f"  {i}. {t}" for i, t in enumerate(avoid[-AVOID_VENTANA:], 1))
     return f"""
 
 PROHIBIDO REPETIR. Ya has escrito estas historias en esta misma tanda:
