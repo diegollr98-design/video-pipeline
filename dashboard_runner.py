@@ -44,6 +44,17 @@ def build_command(options: dict) -> list:
     if options.get("no_shorts"):
         cmd += ["--no-shorts"]
 
+    # SIEMPRE. El auditor corre al final de `main.py` y mide sobre el `.ass` y
+    # el `_story.txt` de `temp/`; sin esto `cleanup_temp` los borra ANTES de
+    # que se midan los shorts y el veredicto sale con
+    # `FALLA cobertura de sincronismo ... falta su .ass` aunque el video este
+    # perfecto -- medido el 19-ago en `video_004`. Ademas dejaba el video
+    # recien producido IMPOSIBLE de re-auditar (clase [GATE-08]): sin
+    # artefactos no hay nada que medir, y sin veredicto el dashboard no lo
+    # ofrece para subir. `temp_dir` vive en D:, asi que el coste es disco
+    # barato a cambio de que la salida sea auditable.
+    cmd += ["--keep-temp"]
+
     return cmd
 
 
@@ -74,12 +85,25 @@ def launch_run(options: dict) -> dict:
     log_path = _next_log_path()
 
     log_file = open(log_path, "w", encoding="utf-8")
+
+    # El log se abre en UTF-8, pero eso no basta: el proceso HIJO elige su
+    # codificacion de stdout por el locale de Windows (cp1252), y el auditor
+    # imprime tildes, comillas angulares y flechas. Cada una de esas lineas
+    # reventaba el StreamHandler de logging y Python escupia un
+    # `UnicodeEncodeError` con su traceback ENTERO dentro del log -- que es
+    # justo lo que la pestana Progreso ensena en vivo. Medido el 19-ago: una
+    # corrida normal metia ~20 tracebacks entre las lineas del veredicto.
+    # PYTHONUTF8=1 fuerza el modo UTF-8 del hijo (mismo flag que ya usan los
+    # comandos manuales del repo y la tarea programada del escaneo).
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+
     proc = subprocess.Popen(
         cmd,
         cwd=PROJECT_DIR,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         text=True,
+        env=env,
     )
 
     return {
