@@ -1267,6 +1267,24 @@ def _limpiar_bloque(texto, etiqueta):
 # `target_words > WORDS_PER_BLOCK` este umbral no cambia su plan de bloques.
 _UN_SOLO_BLOQUE_MAX_PALABRAS = WORDS_PER_BLOCK
 
+# Por encima de este factor, `_truncate_to_words` recorta -- y recorta por el
+# MEDIO: conserva el principio y las ultimas N palabras como desenlace, asi que
+# lo que tira es justo la RESOLUCION. Medido en 8 corridas del 18-19 ago: el
+# modelo escribio 665, 714, 854, 919, 938 palabras para un objetivo de 623, y
+# las tres que pasaron de 747 (= 623 x 1.2) publicaron un video cuyo TITULO
+# promete una escena que el cuerpo no narra ([TRUNCA-02]) -- y el titulo va a la
+# miniatura y a la intro.
+_SOBREPASO_MAX_FACTOR = 1.2
+
+# Reintentos de GENERACION cuando el modelo se pasa de `_SOBREPASO_MAX_FACTOR`.
+# Regenerar es preferible a recortar por el medio: cuesta 1 peticion de las 1000
+# diarias y devuelve una historia INTEGRA, mientras que el truncado devuelve
+# siempre una historia rota en el sitio que mas importa. Con 3 de 8 corridas
+# sobrepasando, dos reintentos dejan la probabilidad de acabar truncando en
+# ~6%. Si se agotan, NO se aborta: se conserva el intento mas corto y decide el
+# truncado de siempre -- el peor caso es exactamente el comportamiento anterior.
+_SOBREPASO_REINTENTOS = 2
+
 
 def _generar_historia_un_bloque(target_words, style, config):
     """`target_words` cabe en una sola llamada: pide la historia COMPLETA.
@@ -1280,12 +1298,39 @@ def _generar_historia_un_bloque(target_words, style, config):
         f"(<= {_UN_SOLO_BLOQUE_MAX_PALABRAS}): pidiendo la historia COMPLETA "
         f"en una sola llamada, sin partir en bloques"
     )
-    title, story = _generate_first_block(target_words, style, config, cerrar_historia=True)
-    story = _limpiar_bloque(story, "Bloque único")
-    story = _ensure_title_at_start(title, story)
+    tope = int(target_words * _SOBREPASO_MAX_FACTOR)
+    mejor = None
+    for intento in range(1 + _SOBREPASO_REINTENTOS):
+        title, story = _generate_first_block(target_words, style, config,
+                                             cerrar_historia=True)
+        story = _limpiar_bloque(story, "Bloque único")
+        story = _ensure_title_at_start(title, story)
+        word_count = len(story.split())
+        logger.info(f"Bloque único: {word_count} palabras, titulo: {title[:60]}...")
 
-    word_count = len(story.split())
-    logger.info(f"Bloque único: {word_count} palabras, titulo: {title[:60]}...")
+        if mejor is None or word_count < mejor[3]:
+            mejor = (title, story, None, word_count)
+        if word_count <= tope:
+            break
+
+        # No truncamos todavia: el truncado corta por el MEDIO y se lleva la
+        # resolucion que el titulo promete ([TRUNCA-02]). Se pide otra historia.
+        if intento < _SOBREPASO_REINTENTOS:
+            logger.warning(
+                f"El modelo escribio {word_count} palabras para un objetivo de "
+                f"{target_words} (tope {tope} = x{_SOBREPASO_MAX_FACTOR}). "
+                f"Truncar aqui cortaria por el MEDIO y se llevaria el desenlace "
+                f"que el titulo promete: se REGENERA la historia "
+                f"(intento {intento + 2}/{1 + _SOBREPASO_REINTENTOS})."
+            )
+        else:
+            logger.warning(
+                f"Agotados los {_SOBREPASO_REINTENTOS} reintentos por sobrepaso: "
+                f"el mas corto fue de {mejor[3]} palabras. Se conserva ese y "
+                f"decide el truncado (clase [TRUNCA-02] -- el video puede "
+                f"prometer en el titulo algo que no narra)."
+            )
+    title, story, _, word_count = mejor
 
     # Mismo umbral (0.85) que usa el camino multi-bloque para decidir si un
     # bloque cerró la historia de verdad: si pese a pedírsele la historia
@@ -1458,7 +1503,7 @@ def generate_story(target_words, style, config):
         word_count = len(story.split())
 
     # Truncate if overshooting (conservando el desenlace: ver _truncate_to_words)
-    if word_count > target_words * 1.2:
+    if word_count > target_words * _SOBREPASO_MAX_FACTOR:
         logger.info(f"Truncando de {word_count} a ~{target_words} palabras")
         story = _truncate_to_words(story, target_words)
         word_count = len(story.split())
