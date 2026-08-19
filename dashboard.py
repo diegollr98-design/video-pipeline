@@ -68,8 +68,9 @@ with tab_roadmap:
 
     st.info(
         "💡 En una frase: en **Operar** das Play → el **pipeline** hace todo el "
-        "trabajo → lo ves en **Progreso** → lo recoges en **Resultados**. "
-        "**Estado** y **Config** son apoyo que usas cuando quieras."
+        "trabajo → lo ves en **Progreso** → lo recoges en **Resultados** → y en "
+        "**Subir** va a YouTube, en privado y solo si el auditor lo aprueba. "
+        "**Estado**, **Config** y **Competencia** son apoyo que usas cuando quieras."
     )
 
     st.divider()
