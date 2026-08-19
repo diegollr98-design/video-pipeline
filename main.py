@@ -149,7 +149,11 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
         except OSError:
             pass
 
-    generated = 0
+    # Devuelve los STEMS, no un contador: el auditor necesita saber CUALES son
+    # los shorts de ESTA corrida. Sin eso medía los 2 primeros del directorio
+    # (`short_001`, `short_002`, de agosto), cuyos `.ass` ya no existen, y
+    # cantaba `FALLA cobertura de sincronismo` en una corrida perfecta.
+    generated = []
     for i in range(num_shorts):
         try:
             short_num = short_num_base + i
@@ -161,7 +165,7 @@ def generate_shorts_for_video(gameplay_path, video_num, config, chunk_duration=0
                                     speed=speed, offset=offset, avoid=titulos_previos)
             if titulo:
                 titulos_previos.append(titulo)
-            generated += 1
+            generated.append(f"short_{short_num:03d}")
         except Exception as e:
             logger.error(f"Error generando short {short_num}: {e}")
             continue
@@ -320,7 +324,7 @@ def produce_video(chunk_path, chunk_duration, video_num, config, args):
     return True
 
 
-def _auditar_salida(config, args, chunk_dur, stems=None):
+def _auditar_salida(config, args, chunk_dur, stems=None, shorts_stems=None):
     """Corre `scripts/audit_run.py` y deja su veredicto junto a cada vídeo.
 
     Como SUBPROCESO a propósito: el auditor carga whisper para transcribir de
@@ -353,6 +357,11 @@ def _auditar_salida(config, args, chunk_dur, stems=None):
         # vez, para reescribir un veredicto que ya existia.
         if stems:
             cmd += ["--stem", ",".join(stems)]
+        # Lo mismo para el gemelo de shorts (clase [GATE-05]): sin esto el
+        # auditor acota por nombre y coge los PRIMEROS del directorio, que en
+        # produccion son de hace semanas y ya no tienen `.ass`.
+        if shorts_stems:
+            cmd += ["--shorts-stems", ",".join(shorts_stems)]
 
         logger.info(f"Auditando la salida: {' '.join(cmd[1:])}")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
@@ -468,6 +477,7 @@ def main():
 
     ultimo_chunk_dur = None
     stems_producidos = []
+    shorts_producidos = []
     # Cuántas veces se TOMÓ un chunk y se intentó producir. Distingue "no había
     # gameplay que procesar" (0 vídeos legítimo) de "lo intenté y fallé"
     # (0 vídeos = fallo). Sin esta distinción no se puede devolver un código de
@@ -498,8 +508,9 @@ def main():
                     shorts_generated = generate_shorts_for_video(
                         chunk_path, video_num, config, chunk_duration,
                         max_shorts=getattr(args, 'max_shorts', 0))
-                    if shorts_generated > 0:
-                        logger.info(f"Generados {shorts_generated} shorts para video {video_num}")
+                    if shorts_generated:
+                        shorts_producidos.extend(shorts_generated)
+                        logger.info(f"Generados {len(shorts_generated)} shorts para video {video_num}")
 
                 video_num += 1
         except Exception as e:
@@ -563,7 +574,8 @@ def main():
     # vídeo se queda sin veredicto y por tanto FUERA de la cola de subida, que
     # es el lado barato del error (§16).
     if success and not args.dry_run and not args.no_audit:
-        _auditar_salida(config, args, ultimo_chunk_dur, stems_producidos)
+        _auditar_salida(config, args, ultimo_chunk_dur, stems_producidos,
+                        shorts_producidos)
 
     # Show remaining pool
     pool = get_pool_status(config)
