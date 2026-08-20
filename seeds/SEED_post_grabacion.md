@@ -99,8 +99,10 @@ la clase entera desaparece por construcción en lugar de volverse improbable.
 - **Corregidos el 18-ago** (no volver a tocarlos): el aviso de `[ANCLA-01] SIGUE VIVO` (era falso y
   apuntaba a una línea que ya no existe), la ventana anti-repetición ("12" → `AVOID_VENTANA`), y la
   ruta del fixture `test_e2e/clip.mp4` → `test_e2e/input/clip.mp4` [DOC-02].
-- **README.md creado el 18-ago.** Si cambian las cifras que cita (sincronismo 0,045 s, pausas 0,
-  error 0,502 → 0,072), actualízalo: es lo primero que se lee.
+- **README.md creado el 18-ago.** Si cambian las cifras que cita, actualízalo: es lo primero que se
+  lee. ⚠️ El 20-ago se corrigió el par `0,502 → 0,072`, que **cruzaba dos mediciones distintas** (el
+  «después» del A/B era 0,146; el 0,072 es de otra corrida y otro régimen). Es la misma clase que
+  obligó a rehacer el overlay de §9 del vídeo. **Cada cifra, con su medición.**
 
 ---
 

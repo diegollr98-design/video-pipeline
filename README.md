@@ -75,7 +75,12 @@ completo está en [`CLAUDE.md`](CLAUDE.md) y el registro de incidentes en
 - **Los subtítulos iban ~0,5 s por detrás de la voz durante meses** y el pipeline no daba error.
   Causa: `edge-tts` no emite marcas de palabra, solo de frase, y esa ventana **incluye los
   silencios**; el código repartía las palabras para rellenarla entera. El fix fue cambiar de
-  mecanismo (trasladar en vez de repartir), no de constante: **error medio 0,502 s → 0,072 s**.
+  mecanismo (trasladar en vez de repartir), no de constante. Medido contra una transcripción
+  independiente del audio, no contra el texto de partida: **error medio 0,502 s → 0,146 s**, máximo
+  1,064 → 0,248, y el sesgo pasa de **+0,435 s (detrás)** a **−0,146 s (delante)**. Después vinieron
+  otros arreglos del anclaje, y el gate sobre el fixture de 3 min da hoy **0,072 s** de error medio.
+  *(Son medidas de corridas distintas: emparejar el «antes» de una con el «después» de otra infla la
+  mejora, y ese es justo el tipo de cifra que este proyecto no publica.)*
 - **Lo que se le pide al modelo en prosa no está garantizado hasta que un `if` lo fuerza.** Pedir
   comas en el prompt dio 167, 129, **0 y 0** comas en cuatro generaciones. Se imponen en código.
   Lo mismo con el título forzado al inicio del speech y con la variedad de los shorts.
