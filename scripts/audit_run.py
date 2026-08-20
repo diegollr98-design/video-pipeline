@@ -396,22 +396,37 @@ def _clausula_resolutiva(titulo, max_palabras=_COHERENCIA_MAX_PALABRAS):
     return " ".join(palabras) if palabras else None
 
 
+def _clausula_y_cuerpo(story_path):
+    """`(clausula_resolutiva, cuerpo)` del guion, o `(None, cuerpo|None)`.
+
+    Vive aparte porque lo necesitan DOS consumidores: el pre-filtro léxico
+    (`coherencia_titulo_cuerpo`) y el juez que decide (`_juez_llm_coherencia`).
+    Duplicar el troceo del título en el call site es justo cómo se desincronizan
+    dos extremos que tienen que ver el mismo texto ([SHORTREP-01]: la ventana
+    anti-repetición se sembraba con 8 y se consumía con 40).
+    """
+    texto = open(story_path, encoding="utf-8").read()
+    m = re.search(r"[.!?]", texto)
+    if not m:
+        return None, None
+    return _clausula_resolutiva(texto[:m.end()].rstrip(".!?")), texto[m.end():]
+
+
 def coherencia_titulo_cuerpo(story_path):
     """¿Lo que el título promete en su cláusula resolutiva se narra en el cuerpo?
+
+    PRE-FILTRO léxico, no veredicto: mide solapamiento de raíces, que NO
+    distingue "no se narra" de "se narra con otras palabras" [COHER-02]. Quien
+    decide sobre un ratio bajo es `_juez_llm_coherencia`.
 
     Devuelve `(bool|None, motivo, ratio|None)`. Ver la calibración completa
     junto a las constantes de arriba.
     """
     from modules.script_generator import _ES_FUNCIONALES
 
-    texto = open(story_path, encoding="utf-8").read()
-    m = re.search(r"[.!?]", texto)
-    if not m:
+    clausula, cuerpo = _clausula_y_cuerpo(story_path)
+    if cuerpo is None:
         return None, "el guion no tiene ni una frase completa: no se puede aislar el título", None
-    titulo = texto[:m.end()].rstrip(".!?")
-    cuerpo = texto[m.end():]
-
-    clausula = _clausula_resolutiva(titulo)
     if clausula is None:
         return None, ("título sin cláusula resolutiva reconocible (sin "
                       "'pero'/'aunque'/'hasta que'): no se puede comprobar"), None
@@ -440,6 +455,138 @@ def coherencia_titulo_cuerpo(story_path):
             f"(clase [TRUNCA-01])"
         ), ratio
     return True, f"{ratio:.0%} de la cláusula resolutiva reaparece en el cuerpo narrado", ratio
+
+
+# --- [COHER-02] el juez de la promesa del título -----------------------------
+# El solapamiento léxico de `coherencia_titulo_cuerpo` NO puede decidir esto, y
+# está MEDIDO, no supuesto (20-ago-2026, verdad-terreno establecida LEYENDO 11
+# cuerpos, no preguntándole al instrumento):
+#
+#   ratio de raíces      -> 0,40 es FALSO positivo dos veces (video_009, _011)
+#                           mientras 0,29 y 0,50 son VERDADEROS (video_008,
+#                           video_007-fixture). Las poblaciones se solapan
+#                           por completo: el umbral no es la palanca.
+#   "falta un sustantivo
+#    concreto"           -> bloquea 4 de 5 verdaderos Y 4 de 5 falsos. Cero
+#                           separación.
+#
+# Porque el cuerpo narra la resolución con OTRAS palabras: «lo mandó a la
+# cárcel» -> «tres años de prisión»; «perdió su licencia» -> «hace asesoría
+# fiscal sin firma»; «las pruebas de su infidelidad» -> «la filtración de los
+# correos». Ninguna raíz de 5 caracteres ve eso.
+#
+# Es §18 en su forma pura: un juicio que el heurístico NO puede dar. La salida
+# que este repo ya eligió antes ante la misma forma de problema es
+# `trend_advisor.classify_channels` (tres heurísticos probados, ninguno separaba
+# -> lo juzga el LLM con muestras). Aquí igual.
+#
+# Lo que NO delega en el modelo es la REGLA: la fija Diego (20-ago) y va escrita
+# en el prompt — resolver por una vía distinta de la que el título nombra cuenta
+# como incumplido, porque el título va a la MINIATURA y a la INTRO.
+# Los tres valores están MEDIDOS contra el modelo real, no elegidos a ojo:
+#   MAX_PALABRAS=700  el desenlace vive al final por definición. Mandar el cuerpo
+#                     entero (589-6224 palabras) alarga el razonamiento del
+#                     modelo hasta agotar el presupuesto sin llegar a responder.
+#   MAX_TOKENS=2500   nemotron RAZONA en voz alta (en inglés, además). Medido:
+#                     con 120 tokens se corta a mitad del razonamiento y con 900
+#                     también ("Therefore," y fin). Con 2500 responde en 284
+#                     caracteres porque ya no necesita recortarse.
+#   el veredicto va en la ÚLTIMA línea, no en la primera: se busca el último
+#   match, que es lo contrario de lo que hacen los guardias de cabecera y el
+#   motivo por el que [BASURA-01] se coló enterrado en el cuerpo.
+_COHERENCIA_LLM_MAX_PALABRAS = 700
+_COHERENCIA_LLM_MAX_TOKENS = 2500
+_RE_VEREDICTO_LLM = re.compile(r"VEREDICTO:\s*(SI|NO)\s*\|\s*(.+)$", re.IGNORECASE)
+
+
+def _juez_llm_coherencia(clausula, cuerpo, config=None):
+    """¿El cuerpo narra el desenlace que el título promete?
+
+    Devuelve `(True|False|None, motivo)`. `None` = NO SE PUDO JUZGAR, y el
+    llamador debe FALLAR CERRADO: un gate cuyo caso desconocido cae del lado
+    barato es exactamente [GATE-04], que ya se coló por tres caminos aquí.
+
+    Lleva su propio guardia de salida porque el modelo de producción razona en
+    voz alta y a veces entrega el razonamiento en vez de la respuesta (el mismo
+    motivo por el que existen `_validar_salida` y el guardia de
+    `trend_advisor.debate`). Se exige una línea final `VEREDICTO: SI | motivo`
+    o `VEREDICTO: NO | motivo`, se toma la ÚLTIMA que aparezca (delante viene el
+    razonamiento) y se reintenta UNA vez con una instrucción más dura antes de
+    rendirse.
+    """
+    from modules.script_generator import _call_openrouter
+    from modules.utils import load_config, load_dotenv
+
+    # `audit_run` se lanza SUELTO (a mano y desde `main.py`), y hasta hoy no
+    # necesitaba credenciales. Sin esto el juez fallaba cerrado siempre por
+    # falta de API key: un gate que bloquea todo no es un gate, es un muro.
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        try:
+            load_dotenv()
+        except Exception:
+            pass  # sin .env el guardia de _call_openrouter da el error bueno
+
+    if config is None:
+        try:
+            config = load_config()
+        except Exception as e:
+            return None, f"no se pudo leer config.yaml: {e}"
+
+    palabras = cuerpo.split()
+    recortado = len(palabras) > _COHERENCIA_LLM_MAX_PALABRAS
+    cuerpo_msg = " ".join(palabras[-_COHERENCIA_LLM_MAX_PALABRAS:])
+
+    base = (
+        "Eres un auditor de guiones narrados. Te doy el DESENLACE que promete el "
+        "titulo de una historia y el CUERPO que se narro de verdad.\n\n"
+        "Decide si el cuerpo narra ese desenlace, aplicando EXACTAMENTE estas reglas:\n"
+        "- CUMPLIDO si el cuerpo lo narra aunque sea con OTRAS PALABRAS: sinonimos o "
+        "parafrasis del mismo hecho ('lo mando a la carcel' = 'tres anios de prision'; "
+        "'perdio su licencia' = 'hace asesoria fiscal sin firma').\n"
+        "- INCUMPLIDO si el cuerpo resuelve por una VIA DISTINTA de la que el titulo "
+        "nombra (el titulo promete un testamento y el cuerpo resuelve con una sentencia "
+        "judicial: eso es INCUMPLIDO aunque el final sea equivalente), o si simplemente "
+        "no se narra.\n\n"
+        f"DESENLACE PROMETIDO POR EL TITULO: <<{clausula.strip()}>>\n\n"
+        + ("CUERPO NARRADO (las ultimas %d palabras, que es donde vive la "
+           "resolucion):\n" % _COHERENCIA_LLM_MAX_PALABRAS if recortado
+           else "CUERPO NARRADO:\n")
+        + cuerpo_msg
+    )
+    formato = (
+        "\n\nPiensa lo minimo y termina SIEMPRE con una ultima linea con este "
+        "formato exacto, sin nada despues:\n"
+        "VEREDICTO: SI | <motivo breve>\n"
+        "VEREDICTO: NO | <motivo breve>"
+    )
+    duro = (
+        "\n\nTu respuesta anterior no traia la linea VEREDICTO. NO razones: "
+        "responde solo con esa unica linea."
+    )
+
+    ultimo = ""
+    for intento in range(2):
+        prompt = base + formato + (duro if intento else "")
+        try:
+            bruto = _call_openrouter(
+                [{"role": "user", "content": prompt}], config,
+                max_tokens=_COHERENCIA_LLM_MAX_TOKENS)
+        except Exception as e:
+            return None, f"la llamada al juez fallo: {e}"
+        ultimo = (bruto or "").strip()
+        # El veredicto es la ULTIMA linea con formato: delante viene el
+        # razonamiento del modelo, que a veces cambia de opinion por el camino.
+        encontrado = None
+        for linea in ultimo.splitlines():
+            m = _RE_VEREDICTO_LLM.search(linea.strip())
+            if m:
+                encontrado = m
+        if encontrado:
+            return (encontrado.group(1).upper() == "SI",
+                    encontrado.group(2).strip()[:200])
+    return None, (f"el juez no devolvio la linea VEREDICTO en 2 intentos "
+                  f"(ultima respuesta: {ultimo[-120:]!r})")
+
 
 
 def ngramas_repetidos(texto, n=12):
@@ -678,40 +825,53 @@ def audita_video(video, ass, story, chunk_dur=None, model="small"):
         # --- [TRUNCA-01] coherencia título <-> cuerpo (la consecuencia)
         try:
             coherente, motivo_coh, _ratio_coh = coherencia_titulo_cuerpo(story)
+            _clausula_coh, _cuerpo_coh = _clausula_y_cuerpo(story)
             if coherente is None:
                 print(f"{AVISO} coherencia título/cuerpo: {motivo_coh}")
             elif coherente:
                 print(f"{OK} coherencia título/cuerpo: {motivo_coh}")
-            # Este check mide la CONSECUENCIA de [TRUNCA-01]: el truncado se
-            # llevó la resolución. Su señal es que las palabras de la cláusula
-            # resolutiva del título no reaparecen en el cuerpo... y esa señal
-            # NO distingue "no lo narra" de "lo narra con otras palabras".
-            # Medido sobre `video_009` (18-ago): el título prometía «el juez
-            # descubrió la estafa y lo mandó a la cárcel», el cuerpo narra «el
-            # magistrado leyó el dictamen pericial», «las grabaciones llegaron
-            # al juez» y «leyeron la sentencia de tres años de prisión» — la
-            # resolución se narra ENTERA, y el check cantó 40% porque el
-            # emparejado es por raíz de 5 caracteres y no sabe que prisión es
-            # cárcel. Falso positivo con `truncado narrativo` en OK y el log
-            # diciendo "esta historia no se truncó".
+            # [COHER-02] El solapamiento léxico NO decide: solo PRE-FILTRA.
             #
-            # Por eso BLOQUEA solo cuando hubo truncado, que es cuando el
-            # mecanismo que este check persigue puede haber ocurrido. Sin
-            # truncado no se puede haber comido nada, así que la discrepancia
-            # es paráfrasis mientras no se demuestre lo contrario: se AVISA.
-            # No es ablandar el gate — sigue bloqueando `video_008` (truncado
-            # del 21%, resolución de verdad ausente) y los 6 casos históricos,
-            # que son TODOS los verdaderos positivos observados.
-            elif not _frac_trunc:
-                print(f"{AVISO} coherencia título/cuerpo: {motivo_coh}")
-                print(f"{AVISO}   ...pero esta historia NO se truncó, así que no "
-                      f"bloquea: sin truncado la causa de [TRUNCA-01] no puede "
-                      f"haber ocurrido y el check no distingue paráfrasis")
+            # Hasta el 20-ago esta rama bloqueaba únicamente si hubo truncado
+            # (`elif not _frac_trunc`), con la premisa "sin truncado la causa de
+            # [TRUNCA-01] no puede haber ocurrido". La premisa es FALSA y el fix
+            # de [TRUNCA-02] la volvió dominante: al hacer raro el truncado,
+            # mandó casi todo el tráfico por la rama que no bloquea. Resultado
+            # medido: `video_005` y `video_007` de la grabación del 19-ago
+            # quedaron `ok:true` — y por tanto PUBLICABLES en el dashboard, que
+            # cablea el botón a `bool(auditoria["ok"])` — con un AVISO de la
+            # clase que este check existe para cazar. `video_007` promete «el
+            # testamento final la dejó sin nata» y en sus 589 palabras no hay
+            # ningún testamento: resuelve por sentencia judicial.
+            # Además fallaba ABIERTO: sin `pipeline.log`, `_frac_trunc` es None
+            # y `not None` mandaba a la rama del AVISO.
+            #
+            # Ahora quien juzga es `_juez_llm_coherencia` (ver su docstring: dos
+            # formulaciones léxicas medidas, cero separación). El caso que no se
+            # puede juzgar FALLA CERRADO, que es el lado caro del default (§16).
             else:
-                print(f"{MAL} coherencia título/cuerpo: {motivo_coh}")
-                fallos.append(f"coherencia título/cuerpo: {motivo_coh}")
+                veredicto, motivo_llm = _juez_llm_coherencia(_clausula_coh, _cuerpo_coh)
+                if veredicto is True:
+                    print(f"{OK} coherencia título/cuerpo: solapamiento léxico bajo "
+                          f"({_ratio_coh:.0%}) pero la resolución SÍ se narra "
+                          f"con otras palabras: {motivo_llm}")
+                elif veredicto is False:
+                    print(f"{MAL} coherencia título/cuerpo: {motivo_coh}")
+                    print(f"{MAL}   juez: {motivo_llm}")
+                    fallos.append(f"coherencia título/cuerpo: {motivo_coh}")
+                else:
+                    print(f"{MAL} coherencia título/cuerpo: NO SE PUDO JUZGAR "
+                          f"({motivo_llm})")
+                    print(f"{MAL}   el léxico decía: {motivo_coh}")
+                    fallos.append(
+                        "coherencia título/cuerpo: no se pudo juzgar "
+                        f"({motivo_llm}) -- no se aprueba lo que no se ha medido")
         except Exception as e:
-            print(f"{AVISO} no se pudo comprobar la coherencia título/cuerpo: {e}")
+            # FALLA CERRADO: un except que solo AVISA es [GATE-04]. Este bloque
+            # decide si el título que va a la MINIATURA promete algo que el
+            # vídeo no narra; "no lo pude comprobar" no es "está bien".
+            print(f"{MAL} coherencia título/cuerpo: NO SE PUDO COMPROBAR ({e})")
+            fallos.append(f"coherencia título/cuerpo: no se pudo comprobar ({e})")
 
         # [BASURA-03]: el modelo se auto-audita en un BLOQUE de markdown al
         # final ("**Resumen de los elementos solicitados incluidos:** 1.
