@@ -1,3 +1,14 @@
+> # ⚠️ SUPERADO — no es el guion que se grabó
+>
+> Este documento es del **5-ago-2026** y describe un formato con **voz en off** que ya no se usa. El
+> guion vivo es el de formato **F2** (captions mudos quemados, sin locución), y no vive en este repo:
+> está en `PORTAFOLIO/.tmp/guiones/YOUTUBE-PIPELINE-guion-video.md` del escritorio. El vídeo se grabó
+> el **19-ago-2026** con ese.
+>
+> Se conserva por historia. Sus referencias a `PORTAFOLIO/YOUTUBE-PIPELINE.html` **ya no resuelven**:
+> las páginas del portafolio salieron del repo el 20-ago (estaban desactualizadas) y viven en
+> `C:/Users/diego/Desktop/PORTAFOLIO/<PROYECTO>/`.
+
 # Guion — Recorrido de YOUTUBE PIPELINE (vídeo de `#recorrido` del portfolio)
 
 > Pieza central del slot `#recorrido` en `PORTAFOLIO/YOUTUBE-PIPELINE.html`. **Formato:** voz en off

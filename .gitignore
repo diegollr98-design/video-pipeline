@@ -15,3 +15,10 @@ pipeline.log
 # nada de dentro (un directorio excluido no se recorre).
 test_e2e/*
 !test_e2e/config.yaml
+
+# Las paginas del portafolio viven en C:/Users/diego/Desktop/PORTAFOLIO, una por
+# carpeta. Aqui llegaron a colarse 4 copias (SEKURA, PUMPFUN-BOT, RESELLERMASTER,
+# YOUTUBE-PIPELINE) que ademas quedaron DESACTUALIZADAS: la de este proyecto tenia
+# 130 KB contra los 197 KB de la buena, sin el bloque de 'error medio por regimen'.
+# Un repo publico con una version vieja de tu propia pagina es peor que no tenerla.
+PORTAFOLIO/
