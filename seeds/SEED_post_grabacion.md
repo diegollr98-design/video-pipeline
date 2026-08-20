@@ -45,22 +45,17 @@ veredictos** (`_HUELLA_FUENTES`): re-audita al final, una sola vez.
 
 ---
 
-## 🟠 P1 · [TRUNCA-02] — el truncado corta por el MEDIO y se lleva el clímax
+## ✅ P1 · [TRUNCA-02] — CERRADO el 19-ago
 
-Sigue abierto y es el único defecto vivo que llega al vídeo publicado.
+Estaba aquí como el único defecto vivo que llegaba al vídeo publicado. **Arreglado**: el camino de un
+bloque **regenera** hasta 2 veces si el modelo se pasa de `_SOBREPASO_MAX_FACTOR` (1,2×) en vez de
+recortar por el medio. Verificado en producción: `video_007` escribió 909 → regeneró → 718 → *"esta
+historia no se truncó"* → `sin defectos MEDIBLES`. Detalle y A/B en el ledger.
 
-Dispara cuando el modelo se pasa de `target_words * 1.2` (`script_generator.py:1461`). Medido el
-18-ago sobre 4 corridas del fixture con objetivo 623: **714 · 665 · 919 · ~700** → truncó **1 de 4**,
-y esa vez descartó *"frases 8-15 de 21"*, justo la escena que el título prometía (el notario
-descubriendo la falsificación). En el cuerpo narrado `descubr` y `falsific` aparecían **0 veces**.
-
-El ledger ya nombra el arreglo de fondo: **no sobrepasar** (pedir menos, o regenerar) **en vez de
-recortar por el medio**. Ojo con el margen: en el fixture el corredor seguro es ≤747 palabras, y
-por encima de ~1246 el guardia `_verificar_no_mutila` **aborta la corrida entera**.
-
-⚠️ **Superficie sensible (historia)** → `/eval` completo con shorts + `output-audit` antes de cerrar.
-
----
+**Lo que queda de esta clase, y no es poco:** si se agotan los reintentos se sigue truncando por el
+medio (peor caso = comportamiento anterior). Y el arreglo de FONDO que el ledger nombra —**derivar el
+título del cuerpo ya escrito**, en vez de prometer primero y narrar después— sigue sin hacer. Con él,
+la clase entera desaparece por construcción en lugar de volverse improbable.
 
 ## 🟠 P2 · Huecos de medición que el gate NO cubre (los cazó el `output-audit`, no el gate)
 

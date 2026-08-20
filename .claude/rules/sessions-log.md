@@ -14,6 +14,34 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v1.3 — 2026-08-19/20 — Grabado el vídeo de portafolio: los tres últimos fallos no eran del pipeline ✅
+**Qué se hizo:** día de grabación. El vídeo largo llevaba rato saliendo bien y aun así la toma falló
+tres veces seguidas — **ninguna por el pipeline**: **[LOG-03]** el subproceso del dashboard nacía en
+cp1252 y metía ~20 tracebacks de Python dentro del log que graba §4; **[GATE-08]** `build_command`
+nunca pasaba `--keep-temp`, así que el auditor no tenía artefactos que medir; **[GATE-05b]** el auditor
+medía `short_001`/`short_002` (de agosto) en vez de los recién producidos. Los tres tienen la misma
+forma: `main.py` sabía lo que acababa de producir y no se lo decía a quien mide. Y se cerró
+**[TRUNCA-02]**, que sí era del pipeline.
+**Incidentes:** [TRUNCA-02] (cerrado) [GATE-08] (cerrado) [GATE-05b] [LOG-03].
+**Verificación:** `video_005` y `video_007` → **`VEREDICTO: sin defectos MEDIBLES`**, los primeros
+limpios **en producción** (no en el fixture). [TRUNCA-02] verificado A/B offline con un doble (0
+peticiones) y luego **en vivo 40 min después del commit**: `video_007` escribió 909 palabras →
+`se REGENERA la historia (intento 2/3)` → 718 → *"esta historia no se truncó"*. [GATE-05b] verificado
+re-auditando `video_005` sin regenerar nada: `NO PUBLICABLE — 1 problema(s)` → `sin defectos MEDIBLES`.
+[LOG-03]: de ~20 tracebacks a **0**.
+**Lo que esto enseña:** (a) **confirmé "listo para grabar" tres veces y las tres falló** — el error de
+fondo fue dar por verificada la cadena mirando el vídeo y no lo que el operador ve: el log, el flag del
+lanzador y el alcance del auditor; (b) **el gemelo del gate**: `--shorts-stems` existía desde [GATE-05]
+y `main.py` no lo usaba — la 1.ª incidencia se arregló solo en el lado del auditor; (c) **la sesión de
+montaje cazó dos cosas que yo di por buenas**: que el 57% de coherencia era de `video_006` y no de
+`video_004` (20%), y que el `+0,51` del overlay de §9 **era un fotograma de una animación** — yo tenía
+delante que el contador arranca en `+0,00 s` y aun así lo confirmé. El par estable era el `sesgo medio`.
+**Pendiente:** **el detector de pausas sigue ciego** (`audit_run.py:539`, `exceso = max(0, silencios −
+signos)` da 0 por construcción desde el p90=21) — es el P0 del seed. El arreglo de fondo de la clase
+[TRUNCA-01] —derivar el título del cuerpo ya narrado— sigue sin hacer. `PORTAFOLIO/` tiene dentro una
+copia **desactualizada** de `YOUTUBE-PIPELINE.html` (133 KB contra 191 KB de la buena) y el repo se va a
+publicar. `sessions-log.md` supera su tope de 100 líneas: el próximo `/optimize` es de poda.
+
 ## v1.2 — 2026-08-18 — El pipeline no estaba roto: tenía un guardia dormido ✅
 **Qué se hizo:** Diego paró el trabajo con *"no quiero grabar como sale en rojo, quiero grabar como sale
 bien el vídeo"* — y tenía razón: yo había encuadrado el rojo como "honesto" cuando un portafolio que

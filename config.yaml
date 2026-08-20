@@ -129,7 +129,7 @@ story:
   min_words: 500
   max_words: 8000
   style: "dramatic"              # dramatic | funny | horror | wholesome
-  target_duration_min: 150      # 20 min: mínimo para producir un video
+  target_duration_min: 1200      # 20 min: mínimo para producir un video
   target_duration_max: 2400      # 40 min: a partir de aquí se corta (30 min chunk + sobrante)
   chunk_size: 1800               # 30 min: tamaño del chunk cuando se corta
 
