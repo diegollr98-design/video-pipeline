@@ -26,7 +26,8 @@ import time
 import requests
 
 from modules.competitor_scout import (
-    QUOTA_COST, QuotaMeter, QuotaExhausted, load_state, save_state, _data_dir,
+    QUOTA_COST, QuotaMeter, QuotaExhausted, meter_from_config,
+    load_state, save_state, _data_dir,
 )
 from modules.utils import huella_auditor
 
@@ -295,9 +296,7 @@ def puede_subir(config):
     minutos de red, así que se pregunta antes.
     """
     state = load_state(config)
-    limite = ((config.get("competition") or {}).get("quota") or {}).get(
-        "daily_limit", 10000)
-    meter = QuotaMeter(state, limite)
+    meter = meter_from_config(state, config)
     # `videos.insert` NO sale del bote de unidades: tiene su propio cupo de
     # llamadas al dia. Preguntar por `remaining()` (que es el de unidades)
     # respondia sobre el cupo equivocado.
@@ -320,12 +319,10 @@ def puede_subir(config):
 
 def _cobra_cuota(config):
     state = load_state(config)
-    limite = ((config.get("competition") or {}).get("quota") or {}).get(
-        "daily_limit", 10000)
-    meter = QuotaMeter(state, limite)
+    meter = meter_from_config(state, config)
     meter.charge("videosInsert")       # lanza QuotaExhausted si no cabe
     save_state(state, config)
-    return meter.resumen(), limite
+    return meter.resumen(), meter.limits
 
 
 def thumbnail_path_for(video_path):
@@ -340,12 +337,10 @@ def thumbnail_path_for(video_path):
 
 def _cobra_cuota_miniatura(config):
     state = load_state(config)
-    limite = ((config.get("competition") or {}).get("quota") or {}).get(
-        "daily_limit", 10000)
-    meter = QuotaMeter(state, limite)
+    meter = meter_from_config(state, config)
     meter.charge("thumbnailsSet")      # lanza QuotaExhausted si no cabe
     save_state(state, config)
-    return meter.resumen(), limite
+    return meter.resumen(), meter.limits
 
 
 def subir_miniatura(video_id, thumbnail_path, config, creds=None):
@@ -393,7 +388,7 @@ def subir_miniatura(video_id, thumbnail_path, config, creds=None):
         return f"fallo: no se pudo leer el fichero ({type(e).__name__}: {e})"
 
     try:
-        gastado, limite = _cobra_cuota_miniatura(config)
+        gastado, cupos = _cobra_cuota_miniatura(config)
     except QuotaExhausted as e:
         logger.error(f"Sin cuota de YouTube para la miniatura de {video_id}: {e}")
         return f"fallo: {e}"
@@ -420,8 +415,7 @@ def subir_miniatura(video_id, thumbnail_path, config, creds=None):
         return f"fallo: {motivo}"
 
     logger.info(
-        f"Miniatura subida para el vídeo {video_id}; cuota YouTube "
-        f"{gastado}/{limite} unidades hoy")
+        f"Miniatura subida para el vídeo {video_id}; cuota -> {gastado}")
     return "ok"
 
 
@@ -522,7 +516,7 @@ def subir_video(video_path, config, titulo=None, descripcion=None, tags=None,
 
     # La cuota se cobra en cuanto YouTube acepta la sesión: el gasto es real
     # aunque los bytes fallen a mitad, así que se apunta ya y no al final.
-    gastado, limite = _cobra_cuota(config)
+    gastado, cupos = _cobra_cuota(config)
     logger.info(f"Subida iniciada; cuota de YouTube -> {gastado}")
 
     subidos = 0

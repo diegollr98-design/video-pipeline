@@ -315,6 +315,22 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def meter_from_config(state, config):
+    """Unica costura que construye un `QuotaMeter` desde la config.
+
+    Antes cada sitio lo montaba a mano leyendo solo `daily_limit`, asi que los
+    cupos de busquedas y subidas quedaban siempre en su valor por defecto
+    aunque la config dijera otra cosa. Un solo constructor evita que dos
+    procesos midan con limites distintos sobre el MISMO contador.
+    """
+    quota = ((config.get("competition") or {}).get("quota") or {})
+    return QuotaMeter(
+        state,
+        daily_limit=quota.get("daily_limit", DEFAULT_QUOTA_LIMITS["units"]),
+        limits=quota.get("limits") or {},
+    )
+
+
 class QuotaMeter:
     """Contabiliza los TRES cupos diarios (dia natural UTC) sobre el state.
 
@@ -1090,7 +1106,7 @@ def scan(config, discover=True, progress=None):
     api_key = get_api_key(config)
 
     state = load_state(config)
-    meter = QuotaMeter(state, int(comp["quota"]["daily_limit"]))
+    meter = meter_from_config(state, config)
     competitors = state["competitors"]
 
     warnings = []

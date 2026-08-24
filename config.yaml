@@ -214,7 +214,22 @@ competition:
       freshness: 0.10            # cuanto más reciente, mejor
 
   quota:
-    daily_limit: 10000           # tope local; corta antes de que Google devuelva 403
+    daily_limit: 10000           # tope local del cupo de UNIDADES; corta antes
+                                 # de que Google devuelva 403
+    # Los otros dos cupos. Son INDEPENDIENTES del de unidades (ver QUOTA_BUCKET
+    # en modules/competitor_scout.py, con la cita oficial y su fecha).
+    #
+    # ⚠️ VERIFICA ESTO EN TU CONSOLA antes de fiarte del contador:
+    #   console.cloud.google.com -> IAM y administracion -> Cuotas
+    #   -> YouTube Data API v3
+    # Estos son los valores del reparto POR DEFECTO documentado hoy. Un proyecto
+    # con reparto antiguo o con ampliacion concedida tiene otros, y aqui el error
+    # es PERMISIVO: si tu cupo real de subidas fuese menor, el preflight dejaria
+    # empezar una subida de 3 GB que YouTube cortara con un 403 a mitad. Bajalo
+    # y el corte vuelve a ser preventivo.
+    limits:
+      search: 100                # llamadas/dia de search.list
+      upload: 100                # llamadas/dia de videos.insert
 
 shorts:
   enabled: true
