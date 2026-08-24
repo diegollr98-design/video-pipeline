@@ -157,17 +157,19 @@ competition:
 
   seed_channels: []              # opcional: IDs (UC...), URLs o @handles de canales semilla
   exclude_channels:              # ruido confirmado: español y formato largo, pero otro nicho
-    - "Podcast Extra Anormal"    # paranormal/terror, 2.41M subs — copaba 4 de 12 puestos virales
-    - "Novelas Jo"               # novelas chinas dobladas
+    # Se excluyen por FORMATO: compiten en otra liga y contaminan el scoring.
+    - "Podcast Extra Anormal"    # otro formato: paranormal/terror
+    - "Novelas Jo"               # otro formato: ficcion doblada
     - "El último huésped - Relatos de terror"
-    - "StardustTV-español"       # cortometrajes dramáticos, no narración
+    - "StardustTV-español"       # otro formato: cortometraje
     # (acepta ID UC..., URL o el título exacto del canal)
 
   always_include: []             # TU VETO sobre el clasificador: lo que pongas aquí
-                                 # nunca se descarta automáticamente.
-                                 # Candidato a revisar: "rBarra Historias" (124k subs,
-                                 # gameplay 100%) — el modelo lo descartó por ser
-                                 # compilaciones de AskReddit y no historias narradas.
+                                 # nunca se descarta automáticamente. Util cuando el
+                                 # modelo descarta un canal que si es competencia real
+                                 # (p. ej. uno cuyo catalogo son compilaciones y no
+                                 # historias narradas, pero que compite por el mismo
+                                 # espectador).
 
   # Las keywords van en dos bloques a propósito:
   #  - FORMATO: buscan el nicho real (historia narrada sobre gameplay). Son las
