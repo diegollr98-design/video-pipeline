@@ -90,7 +90,7 @@ num_shorts   = duracion_chunk / (shorts.target_words / target_wpm × 60 / shorts
 Presenta el plan explícitamente:
 
 ```
-presupuesto estimado: <n>/50 restantes (± margen)
+presupuesto estimado: <n>/<tope verificado hoy> restantes (± margen)
 coste de la corrida:  <n> peticiones  (historia <n> + shorts <n> + competencia <n>)
 ```
 
@@ -132,7 +132,7 @@ Si tocaste código desde la última corrida, esto no basta: corre `/eval`.
 ```
 🎬 Daily Run — <fecha>
 
-presupuesto:  <n> gastadas (estimado) · quedaban <n>/50 al empezar
+presupuesto:  <n> gastadas (estimado) · quedaban <n>/<tope verificado> al empezar
 pool:         <min> antes → <min> después
 producido:    video_<NNN>_final.mp4  (<min>, ratio duracion/chunk <X>)
               <n> shorts
@@ -157,8 +157,8 @@ que promueve a regla).
 - **El tope se resetea por día natural UTC**, igual que la cuota de la YouTube Data API.
 - **La cuota de YouTube es aparte y son TRES cupos** (ver `QUOTA_BUCKET`): 100 llamadas/día de
   `search.list`, 100 de `videos.insert`, y 10.000 unidades para el resto (1 por lectura, 50 la
-  miniatura). Un
-  escaneo de 40 canales ≈ 90 unidades. No compite con la de OpenRouter.
+  miniatura). Un escaneo de 40 canales cuesta **4 búsquedas + 81 unidades**, y lo que ata son las
+  búsquedas (100/día → ~25 escaneos), no las unidades. No compite con la de OpenRouter.
 - **Si `pool/` está por debajo de 20 min**, no hay producción posible: la corrida es solo ingesta.
   Dilo y no gastes peticiones.
 - **Limitación conocida:** `short_story.txt` no recibe las directrices de competencia, así que los

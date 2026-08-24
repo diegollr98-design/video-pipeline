@@ -43,6 +43,14 @@ Hay decisiones que no son técnicas y que cambian el diseño. **No las supongas.
 
 ## Restricciones REALES (medidas, no supuestas)
 
+> ⚠️ **CORRECCIÓN (24-ago-2026): las cifras de cuota de este bloque son del modelo VIEJO de Google y
+> hoy son FALSAS.** El epígrafe dice "medidas, no supuestas", así que se anota aquí y no solo en el
+> banner: eran correctas cuando se escribieron y caducaron después. Hoy son **TRES cupos
+> independientes** — 100 llamadas/día de `search.list`, 100 de `videos.insert`, y 10.000 unidades para
+> todo lo demás — y `videos.insert` cuesta **1** unidad de su propio cupo, no 1.600, así que caben
+> **100 subidas/día**, no ~6. Fuente oficial citada con su fecha en `QUOTA_BUCKET`
+> (`modules/competitor_scout.py`). [QUOTA-02]
+
 - **Cuota de YouTube Data API: 10.000 unidades/día.**
   - `videos.insert` cuesta **1.600 unidades**. Es de lejos lo más caro del proyecto.
   - `thumbnails.set` cuesta **50**.

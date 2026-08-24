@@ -177,9 +177,17 @@ video_003: rojo por [ANCLA-07]
 Y **`video_002` no se puede re-auditar**: sus artefactos (`.ass`, `_story.txt`) ya no están en disco.
 Solo `video_003` los conserva, en `D:/YOUTUBE_media/temp/`.
 
+> ✅ **DESENLACE (18/20-ago-2026) — se eligió la opción 3, y la 1 se rechazó explícitamente.** Se anota
+> aquí porque quien lea solo este fichero ve la oferta y no la respuesta. Diego paró el trabajo con
+> *«no quiero grabar como sale en rojo, quiero grabar como sale bien el vídeo»* y se reordenó la sesión
+> a **hacer que salga verde**: se cerraron [COMA-05], [COHER-01] y [SHORTREP-01], y la grabación se hizo
+> sobre `video_012` / `video_005` / `video_007`, los tres con **`VEREDICTO: sin defectos MEDIBLES`**.
+> No se grabó esquivando nada. Detalle en `.claude/rules/sessions-log.md` v1.2 y v1.3.
+
 Opciones, de más barata a más cara:
 1. **Grabar igual**, evitando la zona rota y sin filmar veredictos de producción. Coste 0. Riesgo: el
    vídeo del portfolio enseña un pipeline cuyo último output está en rojo si alguien lo audita después.
+   **← DESCARTADA por Diego (ver el desenlace de arriba).**
 2. **Arreglar [ANCLA-07] y re-componer `video_003`.** Los artefactos están, pero **el chunk de gameplay
    se borró al terminar bien**, así que hay que re-ingestar (~16 min) antes de componer.
 3. **Corrida nueva completa** (~2h40, ~55 peticiones). Solo si sobra el día.

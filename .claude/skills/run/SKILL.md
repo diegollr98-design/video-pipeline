@@ -26,8 +26,9 @@ Correr **en background** y capturar la salida. Un arranque limpio no imprime tra
 parcialmente y esconde el error abajo.
 
 Comprueba que las 8 pestañas montan (Roadmap, Estado, Operar, Progreso, Resultados, Subir,
-Competencia, Config). Recuerda que `st.components.v1.html` (diagrama del Roadmap) está deprecado desde 2026-06-01:
-un warning ahí es esperado, un error no.
+Competencia, Config). El diagrama del Roadmap se embebe con **`st.iframe`** (`dashboard.py:69`), no con
+`st.components.v1.html`, que quedó deprecado: **ahí no debe salir ningún warning de deprecación**. Si
+sale uno, es que algo volvió atrás — no lo des por esperado.
 
 ## C. Pipeline
 
