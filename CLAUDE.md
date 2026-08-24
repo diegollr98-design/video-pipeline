@@ -489,7 +489,7 @@ desde el 10-ago; entre medias se cerraron, además de [BASURA-01] y [ANCLA-01], 
 > VERDE no garantiza un vídeo publicable.** El propio "sin defectos MEDIBLES" de 18/20-ago tuvo
 > luego un matiz — `sessions-log.md` v1.3 registra que el detector de coherencia que sostenía ese
 > veredicto tenía un punto ciego real (`[COHER-02]`, arreglado el 20-ago-2026, ver commit
-> `005523a`). **No des por bueno "sin defectos MEDIBLES" de una fecha vieja**: la huella del
+> `e0b0383`). **No des por bueno "sin defectos MEDIBLES" de una fecha vieja**: la huella del
 > auditor cambia con cada fix y los veredictos caducan (`produccion-loop.md` §C). Verifica con el
 > auditor VIGENTE, no con esta tabla.
 >

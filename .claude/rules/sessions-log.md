@@ -212,7 +212,7 @@ nueva** (todos salen por el `return` temprano). Todos arreglados y medidos: umbr
 contra el caso real de [BASURA-03] (22%), backstop atado a `_CIERRE_MIN_PALABRAS`, tope de 28 palabras
 en el fragmento, invariante solo a la baja. 25 guiones reales sin cambios y la cadena completa con
 **sha256 idéntico**.
-**Pendiente:** **[TRUNC-01] lo cerró el track C** (`d21e6e0`, `8e522fa`: el prompt ORDENABA el
+**Pendiente:** **[TRUNC-01] lo cerró el track C** (`f42d67f`, `c3cc39e`: el prompt ORDENABA el
 sobrepaso que luego se truncaba), y el gate ya lo detecta solo — sobre `video_006` canta `FALLA truncado
 narrativo (77%)` y `FALLA coherencia título/cuerpo (0%)`, donde por la mañana daba verde. **Ya no queda
 ningún defecto conocido que llegue al vídeo largo**, que es lo único que sube el uploader. Abiertos, los
