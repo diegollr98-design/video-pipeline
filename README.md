@@ -38,6 +38,11 @@ el análisis de competencia (Fase 3); el resto del pipeline corre sin ella.
 streamlit run dashboard.py
 ```
 
+El dashboard escucha **solo en `127.0.0.1`** (fijado en `.streamlit/config.toml`).
+No tiene autenticación —es una consola de operación local— así que exponerlo a la
+red daría a cualquiera el control del pipeline y de las credenciales guardadas. Si
+alguna vez necesitas acceso remoto, ponle delante un proxy con autenticación.
+
 **Dos cosas que hay que saber antes de que fallen en silencio:**
 
 - `assets/3.png` (plantilla de miniatura/intro) y el `.mp3` del woosh **no se distribuyen** — son

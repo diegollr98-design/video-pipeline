@@ -11,7 +11,7 @@
 
 ## Contexto
 
-`c:\Users\diego\Desktop\YOUTUBE` genera vídeos de YouTube sin intervención humana:
+`c:\Users\<usuario>\Desktop\YOUTUBE` genera vídeos de YouTube sin intervención humana:
 gameplay de Minecraft + historia narrada + subtítulos + intro + miniatura, más shorts
 verticales. La cadena está validada de punta a punta con medición (ago 2026).
 

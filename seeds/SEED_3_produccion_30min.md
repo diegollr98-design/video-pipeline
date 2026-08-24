@@ -6,7 +6,7 @@
 
 ## Contexto
 
-`c:\Users\diego\Desktop\YOUTUBE` tiene la cadena de producción **validada de punta a
+`c:\Users\<usuario>\Desktop\YOUTUBE` tiene la cadena de producción **validada de punta a
 punta**, pero solo con clips de 3 minutos. Lo que falta es demostrar que aguanta el
 volumen real: un vídeo de 30 minutos con sus ~30 shorts.
 

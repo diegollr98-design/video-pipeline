@@ -69,6 +69,25 @@ def _deep_merge(base, over):
     return base
 
 
+def load_config_raw(path="config.yaml"):
+    """El fichero TAL CUAL, SIN el overlay `.local.yaml` superpuesto.
+
+    Lo usa el editor de config del dashboard: si editara el dict fusionado y
+    lo volcara a `config.yaml`, hornearia en el fichero VERSIONADO los valores
+    locales de esta maquina (rutas de otro disco, y una clave de API si
+    alguien la pusiera ahi, que el codigo admite). Es decir: guardar desde el
+    dashboard publicaria secretos y destruiria el proposito del overlay.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def local_overlay_path(path="config.yaml"):
+    """Ruta del overlay de esta maquina, exista o no."""
+    base, ext = os.path.splitext(path)
+    return base + ".local" + (ext or ".yaml")
+
+
 def load_config(path="config.yaml"):
     """Carga la config y le superpone `<nombre>.local.yaml` si existe.
 
@@ -81,8 +100,7 @@ def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    base, ext = os.path.splitext(path)
-    local_path = base + ".local" + (ext or ".yaml")
+    local_path = local_overlay_path(path)
     if os.path.isfile(local_path):
         with open(local_path, "r", encoding="utf-8") as f:
             overlay = yaml.safe_load(f) or {}

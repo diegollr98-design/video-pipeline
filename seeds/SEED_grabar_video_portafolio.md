@@ -40,9 +40,9 @@
 **Objetivo del usuario, literal:** *"Hoy quiero grabar ya el vídeo para el guion de mi portafolio."*
 Todo lo que no sirva a eso HOY es ruido. **No abras ciclos de fix largos.**
 
-**Guion a grabar:** `C:\Users\diego\Desktop\portafolio\.tmp\guiones\YOUTUBE-PIPELINE-guion-video.md`
+**Guion a grabar:** `C:\Users\<usuario>\Desktop\portafolio\.tmp\guiones\YOUTUBE-PIPELINE-guion-video.md`
 (325 líneas, 11 bloques, 5:28). Su pre-flight son las líneas 73-125.
-**Repo que se graba:** `C:\Users\diego\Desktop\YOUTUBE` (rama `feat/competencia`, HEAD `bb341eb`).
+**Repo que se graba:** `C:\Users\<usuario>\Desktop\YOUTUBE` (rama `feat/competencia`, HEAD `bb341eb`).
 
 ---
 

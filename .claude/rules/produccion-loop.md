@@ -155,7 +155,7 @@ Dos leyes, heredadas del resto de repos y no negociables:
    un defecto o toca superficie sensible, se añade una entrada **factual**: qué pasó, evidencia real
    (el comando y su salida), clase, id. **El retro NO edita reglas.** Una regla es una generalización
    sobre el futuro y eso no se verifica por ejecución; auto-aplicarla desde n=1 es sobreajuste.
-2. **Escritor único de reglas: `/optimize`** (el GLOBAL, `C:\Users\diego\.claude\skills\optimize\` —
+2. **Escritor único de reglas: `/optimize`** (el GLOBAL, `C:\Users\<usuario>\.claude\skills\optimize\` —
    este proyecto **no** define uno propio, a propósito: en `ecxm-ops` el `/optimize` de proyecto
    sombreaba al global, no sabía del ledger, y el loop de auto-mejora nunca llegó a activarse).
    Promueve incidente → regla solo con **≥2 incidencias independientes de la misma clase**, o **1 de

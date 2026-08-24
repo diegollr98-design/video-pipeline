@@ -68,7 +68,7 @@ Todos los bugs graves de este repo produjeron **vídeos completos y reproducible
 | `skills/run` | levantar dashboard / lanzar pipeline y ver la salida real |
 | `skills/daily-run` | loop diario con presupuesto de peticiones de OpenRouter |
 
-**`/optimize` es el GLOBAL** (`C:\Users\diego\.claude\skills\optimize\`), a propósito: es el que conoce el ledger. Este proyecto **no** define uno propio — en `ecxm-ops` el `/optimize` de proyecto sombreaba al global, no sabía del ledger, y el loop de auto-mejora nunca llegó a activarse. No repetir ese fallo aquí.
+**`/optimize` es el GLOBAL** (`C:\Users\<usuario>\.claude\skills\optimize\`), a propósito: es el que conoce el ledger. Este proyecto **no** define uno propio — en `ecxm-ops` el `/optimize` de proyecto sombreaba al global, no sabía del ledger, y el loop de auto-mejora nunca llegó a activarse. No repetir ese fallo aquí.
 
 ---
 

@@ -11,7 +11,7 @@
 
 ## Contexto
 
-`c:\Users\diego\Desktop\YOUTUBE` genera vídeos de YouTube y shorts verticales sin
+`c:\Users\<usuario>\Desktop\YOUTUBE` genera vídeos de YouTube y shorts verticales sin
 intervención humana... hasta el último paso. El pipeline termina dejando en `output/`:
 
 - `video_XXX_final.mp4`

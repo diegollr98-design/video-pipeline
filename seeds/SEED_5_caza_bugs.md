@@ -10,7 +10,7 @@
 
 ## Qué es esto
 
-Revisión en busca de bugs de `c:\Users\diego\Desktop\YOUTUBE`: el pipeline
+Revisión en busca de bugs de `c:\Users\<usuario>\Desktop\YOUTUBE`: el pipeline
 (`main.py` + `modules/`) y el dashboard (`dashboard.py` + `dashboard_runner.py`).
 
 El proyecto genera vídeos de YouTube sin intervención humana: gameplay de Minecraft +

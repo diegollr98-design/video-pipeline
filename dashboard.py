@@ -29,7 +29,9 @@ import yaml
 import dashboard_runner as runner
 
 # Imports READ-ONLY permitidos (no funciones de fase).
-from modules.utils import load_dotenv, load_config, check_dependencies
+from modules.utils import (
+    load_dotenv, load_config, load_config_raw, local_overlay_path, check_dependencies,
+)
 from modules.gameplay_pool import get_pool_status
 from modules import competitor_scout, trend_advisor
 # Diagrama "vivo" del Roadmap: SVG animado (partículas que fluyen por las
@@ -359,10 +361,30 @@ with tab_operar:
             if uploaded is not None:
                 input_dir = config["paths"]["input_dir"]
                 os.makedirs(input_dir, exist_ok=True)
-                dest = os.path.join(input_dir, uploaded.name)
+                # `uploaded.name` es el nombre que manda el CLIENTE y Streamlit
+                # NO lo sanea: un `../modules/utils.py` escribiria fuera de
+                # input/ y sobre codigo que el pipeline importa. Nos quedamos
+                # solo con el nombre base y ademas comprobamos que la ruta
+                # resuelta cae dentro de input/ (§16: el default cae del lado
+                # barato — si no cuadra, no se escribe).
+                _nombre = os.path.basename(uploaded.name.replace("\\", "/")).strip()
+                dest = os.path.abspath(os.path.join(input_dir, _nombre))
+                _raiz = os.path.abspath(input_dir)
+                if (
+                    not _nombre
+                    or _nombre in (".", "..")
+                    or not _nombre.lower().endswith(".mp4")
+                    or os.path.commonpath([_raiz, dest]) != _raiz
+                ):
+                    st.error(
+                        f"Nombre de fichero no admitido: «{uploaded.name}». "
+                        "Solo se aceptan .mp4 y el fichero tiene que quedar "
+                        "dentro de input/."
+                    )
+                    st.stop()
                 if os.path.exists(dest):
                     st.warning(
-                        f"Ya existe «{uploaded.name}» en input/. "
+                        f"Ya existe «{_nombre}» en input/. "
                         "Se sobrescribirá al guardar."
                     )
                 with open(dest, "wb") as f:
@@ -1069,13 +1091,24 @@ with tab_config:
 
     # Re-cargamos FRESCO del disco (la global `config` pudo quedar obsoleta
     # tras un guardado previo en este mismo rerun).
-    cfg = load_config("config.yaml")
+    # RAW, sin el overlay `config.local.yaml`: al guardar se vuelca este dict
+    # sobre el fichero VERSIONADO, y fusionar aqui hornearia en el repo las
+    # rutas (y las claves) locales de esta maquina.
+    cfg = load_config_raw("config.yaml")
 
     st.caption(
         "Editor de campos curados. Al guardar se vuelca el config completo "
         "(se preservan todas las claves), pero **se eliminan los comentarios "
         "del YAML**. El backup .bak conserva la versión previa."
     )
+    _overlay = local_overlay_path("config.yaml")
+    if os.path.isfile(_overlay):
+        st.info(
+            f"Estás editando `config.yaml` (el del repo). Esta máquina además "
+            f"tiene **`{os.path.basename(_overlay)}`**, que se superpone al "
+            f"arrancar el pipeline: los valores que veas aquí pueden no ser "
+            f"los efectivos. Ese fichero se edita a mano y no se versiona."
+        )
 
     # ------------------------------------------------------------------
     # TTS

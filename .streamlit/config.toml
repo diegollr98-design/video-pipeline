@@ -1,4 +1,12 @@
 [server]
+# Escucha SOLO en localhost. Por defecto Streamlit se ata a 0.0.0.0, y este
+# dashboard NO tiene autenticacion: cualquiera en la misma red (cowork, hotel,
+# wifi de cafeteria) tendria la consola de operacion entera — lanzar el
+# pipeline, ver los prefijos de las claves, reescribir config.yaml y subir
+# videos al canal con el token OAuth ya guardado.
+# Si alguna vez necesitas abrirlo a la red, ponle un proxy con autenticacion
+# delante; no quites esta linea a secas.
+address = "127.0.0.1"
 maxUploadSize = 2000
 
 [theme]

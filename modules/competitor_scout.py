@@ -410,12 +410,20 @@ def _api_get(endpoint, params, api_key, meter, max_retries=3):
     meter.charge(endpoint)
 
     params = dict(params)
-    params["key"] = api_key
+    # La clave va por CABECERA, no en el query string. `requests` incluye la
+    # URL completa en el mensaje de sus excepciones, y ese mensaje acaba en
+    # `pipeline.log` (main.py) y EN PANTALLA en el dashboard: con la clave en
+    # la URL, un simple corte de red la publicaba. Google acepta las dos
+    # formas y documenta la cabecera.
+    cabeceras = {"X-goog-api-key": api_key}
 
     last_error = None
     for attempt in range(max_retries):
         try:
-            resp = requests.get(f"{API_BASE}/{endpoint}", params=params, timeout=30)
+            resp = requests.get(
+                f"{API_BASE}/{endpoint}", params=params,
+                headers=cabeceras, timeout=30,
+            )
         except requests.RequestException as e:
             last_error = e
             time.sleep(2 ** attempt)

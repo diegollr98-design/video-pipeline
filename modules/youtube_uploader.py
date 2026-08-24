@@ -109,8 +109,19 @@ def _credenciales(config, permitir_navegador=True):
 
 
 def _guardar_token(creds, path):
-    with open(path, "w", encoding="utf-8") as f:
+    # El fichero lleva un refresh_token de larga vida: con el se puede publicar
+    # en el canal. Se crea con permisos restrictivos ANTES de escribir nada,
+    # para no dejar ni una ventana con el token en un fichero 0644 (en un clon
+    # Linux/macOS ese es el default y lo lee cualquier usuario de la maquina).
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(creds.to_json())
+    try:
+        os.chmod(path, 0o600)          # por si el fichero ya existia
+    except OSError as e:
+        # §13: nada de fallback mudo. En Windows chmod es casi un no-op, pero
+        # si falla en un POSIX hay que enterarse.
+        logger.warning(f"No se pudieron restringir los permisos de {path}: {e}")
     logger.info(f"Token de YouTube guardado en {path}")
 
 

@@ -16,7 +16,7 @@
 
 ## Qué es esto
 
-El pipeline de `c:\Users\diego\Desktop\YOUTUBE` recibió en agosto de 2026 una tanda de
+El pipeline de `c:\Users\<usuario>\Desktop\YOUTUBE` recibió en agosto de 2026 una tanda de
 cambios que arreglaron fallos reales, **medidos**. Todos funcionan. Lo que NO está
 comprobado es si los **parámetros y decisiones de diseño elegidos son los mejores
 posibles**: se eligieron con 1-2 mediciones cada uno, a veces con muestras pequeñas.
