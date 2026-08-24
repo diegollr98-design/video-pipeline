@@ -1,6 +1,7 @@
 # SEED · Re-auditoría de seguridad ANTES de hacer público `video-pipeline`
 
-> 🔵 ABIERTO.
+> ✅ EJECUTADO (24-ago-2026). Su auditoría destapó el transcript fabricado del README
+> —el defecto más grave de la tanda— y tres rondas de datos derivados caducados.
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.
 

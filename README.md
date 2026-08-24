@@ -77,13 +77,27 @@ lo **mide**.
 ```
 $ python scripts/audit_run.py --stem video_012
 
-  OK   sincronismo: medio 0.045s  p95 0.090s  sesgo -0.018s  (0 palabras >0,5 s tarde)
+  OK   sincronismo: medio 0.045s  p95 0.090s  sesgo -0.018s  PEOR TRAMO -0.050s en t=153.88s  (1 palabras >0,5 s tarde)
+ AVISO pausas fuera de puntuación (sobre el .ass, CIRCULAR — informativo): 2
   OK   pausas inventadas (acústico): 0 = 0.0 por 1000 palabras (máximo 12.0)
-  OK   voz SIN subtítulo: 0.00s en 0 tramo(s)
+  OK   voz SIN subtítulo: 0.39s en 1 tramo(s), peor 0.39s en t=157.1s
+  OK   palabras aplastadas: racha máxima 1 (<=0,09 s cada una)
   OK   cierre narrativo · truncado narrativo · basura del modelo · párrafos repetidos
-  OK   loudness: -14.6 LUFS · geometría: PlayRes 1920x1080 + pos(960,540)
+ AVISO coherencia título/cuerpo: el título promete «...no sabía que yo tenía las pruebas de su
+       infidelidad con su» pero solo el 25% de sus palabras de contenido reaparece en el cuerpo
+       narrado (raíces ausentes: infid, sabia, tenia) -- la resolución probablemente NO se narra
+ AVISO   ...pero esta historia NO se truncó, así que no bloquea
+  OK   ratio vídeo/chunk: 1.054  (ajustado)
+  OK   loudness: -15.4 LUFS. YouTube normaliza a -14 y SOLO BAJA
+  OK   geometría: PlayRes 1920x1080 + pos(960,540)
   VEREDICTO: sin defectos MEDIBLES.
 ```
+
+Es la salida **literal**, avisos incluidos, y esa es la parte que importa: el auditor canta dos
+`AVISO` y aun así da verde, porque ninguno de los dos es un defecto **medible** que justifique
+bloquear. Un transcript sin una sola pega demostraría lo contrario — que el gate no mide nada.
+(Este bloque fue durante días un compuesto de tres corridas distintas presentado como una; lo
+destapó una re-auditoría el 24-ago-2026 y se sustituyó por la salida real. `pipeline.log:5988`.)
 
 Ese veredicto **corta**: si encuentra un defecto medible, el botón de subir a YouTube queda
 deshabilitado. Y **caduca solo** — cada veredicto se firma con una huella de los criterios con los
@@ -99,7 +113,7 @@ se versionan, y se cita como tal en vez de fingir que hay un fichero detrás:
 | Cifra | Fichero | Qué es |
 |---|---|---|
 | medio `0,0723 s` · máximo `0,40 s` · sesgo `−0,0669 s` · `422` palabras emparejadas | [`data/eval/2026-08-10.json`](data/eval/2026-08-10.json) | primera corrida del gate `/eval` sobre el fixture de 3 min (10-ago-2026), **antes** de la serie de arreglos del anclaje |
-| medio `0,045 s` · p95 `0,090 s` · 0 palabras >0,5 s tarde | salida real de `scripts/audit_run.py --stem video_012` (20-ago-2026, ver `.claude/rules/sessions-log.md` v1.2/v1.3) | el **mismo fixture de 3 min**, después de esos arreglos |
+| medio `0,045 s` · p95 `0,090 s` · 1 palabra >0,5 s tarde · loudness −15,4 LUFS | salida real de `scripts/audit_run.py --stem video_012`, reproducible en `pipeline.log:5988` (20-ago-2026) | el **mismo fixture de 3 min**, después de esos arreglos |
 | resto de decisiones técnicas (sección siguiente) | [`.claude/incident-ledger.md`](.claude/incident-ledger.md) | registro append-only, un incidente por línea con su evidencia |
 
 Las dos primeras filas son el **mismo fixture en dos momentos**, no fixture contra producción —

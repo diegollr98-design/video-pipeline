@@ -60,9 +60,11 @@ está SUPERADO: no lo ejecutes.** Lee `modules/youtube_uploader.py` entero antes
 
 ## Lo que falta, en orden
 
-1. **`requirements.txt` no tiene `google-api-python-client` ni `google-auth-oauthlib`.** En una
-   instalación limpia el uploader **no arranca**. Verificado hoy: el fichero lista 9 paquetes y
-   ninguno es de Google. Es el arreglo más barato del repo y bloquea todo lo demás.
+1. ~~**`requirements.txt` no tiene `google-api-python-client` ni `google-auth-oauthlib`.**~~
+   ✅ **CERRADO el 24-ago-2026.** `requirements.txt:15-16` ya lista `google-auth` y
+   `google-auth-oauthlib`, que son las dos que el código importa
+   (`youtube_uploader.py:74,99`). `google-api-python-client` **no hace falta**: `googleapiclient`
+   no se importa en ningún sitio del repo (la subida va por `requests` contra la API REST).
 2. **`data/client_secret.json` no existe.** Lo crea Diego en Google Cloud Console (OAuth de
    aplicación de escritorio, API de YouTube Data v3 habilitada). Sin él **no puedes probar nada
    real**: hasta que lo tengas, trabaja contra respuestas simuladas — pero lee la trampa nº1 de abajo
