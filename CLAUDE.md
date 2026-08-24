@@ -507,7 +507,7 @@ consúltalo ahí en vez de en esta tabla, que caduca. Seeds **abiertas** a fecha
 
 | Seed | Qué cierra |
 |---|---|
-| `SEED_B_subida_youtube.md` | La subida a YouTube tiene código (`youtube_uploader.py`, pestaña 📤 Subir) pero `requirements.txt` no lista las dependencias de Google y `data/client_secret.json` no existe: en una instalación limpia no arranca. Necesita decisiones y credenciales del usuario |
+| `SEED_B_subida_youtube.md` | La subida a YouTube tiene código (`youtube_uploader.py`, pestaña 📤 Subir) y `requirements.txt` ya lista `google-auth`/`google-auth-oauthlib` (24-ago), pero `data/client_secret.json` no existe: sin esas credenciales de Google Cloud no se ha ejecutado nunca. Necesita decisiones del usuario |
 | `SEED_E_produccion_final.md` | Producción real de ~30 min con las constantes vigentes + `output-audit` + el juicio de Diego, como cierre formal de la validación a escala. Bloqueada por disco/pool sin gameplay usable a fecha del seed |
 | `SEED_post_grabacion.md` | Lo que quedó abierto tras grabar el vídeo de portafolio (18/20-ago): huecos de medición que el gate no cubre, defectos con dueño pendiente ([ANCLA-07], [SHORTDUR-01], [WOOSH-01]) y limpieza del propio repo antes de publicarlo |
 

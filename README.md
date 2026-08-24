@@ -92,7 +92,9 @@ mentir.
 
 ### Mapa de evidencia
 
-Ninguna cifra de este README es de memoria; todas están en un JSON versionado:
+Ninguna cifra de este README es de memoria. La mayoría vive en un JSON versionado que puedes
+abrir; **la segunda fila no** — es la salida de un script sobre una corrida cuyos artefactos no
+se versionan, y se cita como tal en vez de fingir que hay un fichero detrás:
 
 | Cifra | Fichero | Qué es |
 |---|---|---|
@@ -129,8 +131,9 @@ Operación desde un **dashboard de Streamlit** de 8 pestañas que lanza el pipel
 **Subida a YouTube:** está implementada (`modules/youtube_uploader.py`, OAuth de aplicación de
 escritorio, pestaña 📤 Subir del dashboard), pero **nunca se ha ejecutado en real** — hace falta
 un `client_secret.json` propio de Google Cloud Console, que no se distribuye. Por diseño sube en
-**privado** y solo el vídeo largo (no los shorts: 50 subidas gastarían más cuota de la YouTube API
-de la que hay en un día), y se dispara a mano desde una cola con el veredicto del auditor a la
+**privado** y solo el vídeo largo (no los shorts: el cupo son 100 subidas al día, así que 50 se
+comerían medio día de golpe — y sobre todo, un short subido en automático se salta la única
+revisión humana que este proyecto no delega), y se dispara a mano desde una cola con el veredicto del auditor a la
 vista — nunca automáticamente al terminar una corrida.
 
 ## Decisiones técnicas que costaron una medición
@@ -166,9 +169,9 @@ FFmpeg · Pillow · Streamlit · YouTube Data API v3
 
 ## Cómo se construyó
 
-Empecé este proyecto sin saber programar y lo levanté trabajando con Claude Code: 92 de los 120
-commits del repo llevan `Co-Authored-By: Claude`, y `CLAUDE.md` (506 líneas) es el contrato real
-de cómo se trabaja aquí — qué superficies son sensibles, qué gate hay que pasar antes de cerrar
+Empecé este proyecto sin saber programar y lo levanté trabajando con Claude Code: la gran mayoría
+de los commits llevan `Co-Authored-By: Claude` —cuéntalos, es un `git log`— y `CLAUDE.md` es el
+contrato real de cómo se trabaja aquí — qué superficies son sensibles, qué gate hay que pasar antes de cerrar
 un cambio, qué no se hace nunca. No es un detalle que esconder: es el método.
 
 ## Uso

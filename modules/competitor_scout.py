@@ -7,7 +7,8 @@ Cubre los pasos 1 y 2 del roadmap de competencia:
 El paso 3 (debatir qué atacar) vive en `trend_advisor.py`.
 
 Presupuesto de cuota (la API v3 da 10.000 unidades/día gratis):
-  - search.list        = 100 unidades  -> SOLO para descubrir canales nuevos
+  - search.list        = 1 llamada de un cupo PROPIO de 100/dia  -> SOLO para
+                         descubrir canales nuevos (ver QUOTA_BUCKET)
   - channels.list      =   1 unidad    (hasta 50 IDs por llamada)
   - playlistItems.list =   1 unidad    (hasta 50 videos por llamada)
   - videos.list        =   1 unidad    (hasta 50 IDs por llamada)
@@ -614,7 +615,7 @@ def resolve_seed(seed, api_key, meter):
 
 
 def search_channel_ids(keyword, api_key, meter, region, language, published_after, max_results=50):
-    """search.list (100 unidades) -> IDs de canal que publican sobre `keyword`.
+    """search.list (1 llamada del cupo de 100/dia) -> IDs de canal por `keyword`.
 
     Busca VIDEOS y no canales a propósito: nos interesa quién está publicando
     contenido del nicho ahora mismo, no quién tiene el canal mejor titulado.

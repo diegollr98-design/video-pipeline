@@ -86,6 +86,10 @@ está SUPERADO: no lo ejecutes.** Lee `modules/youtube_uploader.py` entero antes
 ## Techo duro: los shorts NO se pueden subir solos
 
 51 subidas × 1.600 = **81.600 unidades** contra 10.000/día. Con cuota gratuita es **imposible**, y
+> ⚠️ CORRECCIÓN (24-ago-2026): ese modelo de cuota era el VIEJO de Google. Hoy `videos.insert`
+> cuesta **1** unidad y tiene cupo propio de **100 llamadas/día** (ver `QUOTA_BUCKET` en
+> `competitor_scout.py`, con la cita oficial). La conclusión de no subir los shorts **se mantiene**,
+> pero por otra razón: se saltarían la revisión humana. [QUOTA-02]
 el uploader ya lo documenta. "Autónomo" solo puede significar el vídeo largo (1.650/día ⇒ 1 vídeo
 diario). **No gastes tiempo intentando automatizar los shorts.**
 

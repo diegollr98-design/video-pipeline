@@ -935,7 +935,7 @@ with tab_subir:
     st.caption(
         "Se sube **solo el vídeo largo** y **en privado**: tú lo publicas desde "
         "YouTube Studio cuando lo hayas visto. Los shorts no se suben desde aquí — "
-        "51 subidas costarían 81.600 unidades de las 10.000 diarias."
+        "51 subidas se comerían medio cupo diario de subidas (100/día) y 2.550 unidades solo en miniaturas."
     )
 
     from modules import youtube_uploader as _yt

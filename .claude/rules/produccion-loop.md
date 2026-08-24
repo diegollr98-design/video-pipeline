@@ -45,7 +45,7 @@ El gate lo fija **qué costura se toca**, no cuántas líneas cambian.
 | **ingesta** | `video_cleaner.py`, `gameplay_pool.py` | un fallo aquí tira horas de gameplay y aborta la corrida entera |
 | **historia** | `script_generator.py`, `prompts/*.txt` | el título forzado y la variedad de shorts son garantías impuestas en código (`decision-making.md` §17) |
 | **composición** | `video_composer.py`, `subtitle_builder.py`, `shorts_generator.py` | PlayRes, posición, offset de audio y timing de la intro; los shorts son el gemelo que nadie mira |
-| **cuota** | `_call_openrouter`, `competitor_scout.py` | el tope diario de OpenRouter free y las 10.000 unidades/día de la YouTube API son topes DUROS (el valor, con la API: `decision-making.md` §15) |
+| **cuota** | `_call_openrouter`, `competitor_scout.py` | el tope diario de OpenRouter free y los TRES cupos de la YouTube API (100 búsquedas · 100 subidas · 10.000 unidades) son topes DUROS (el valor, con la API: `decision-making.md` §15) |
 
 **Superficie única no sensible** → ceremonia mínima (leer, cambiar, comprobar que compila, decirlo):
 copy del dashboard, un color de miniatura, un texto de log, una pestaña de Streamlit.

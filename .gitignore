@@ -35,6 +35,10 @@ test_e2e/*
 # 130 KB contra los 197 KB de la buena, sin el bloque de 'error medio por regimen'.
 # Un repo publico con una version vieja de tu propia pagina es peor que no tenerla.
 PORTAFOLIO/
+# Y cualquier .html suelto en la raiz: los agentes que trabajan aqui han
+# dejado copias de las paginas del portafolio mas de una vez (yp.html,
+# 24-ago-2026), y un `git add -A` las publicaria con el correo dentro.
+/*.html
 
 # Multimedia de TERCEROS: no se redistribuye (ver assets/README.md y LICENSE).
 # Los ficheros siguen en disco; simplemente no se versionan.

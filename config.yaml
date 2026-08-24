@@ -192,7 +192,8 @@ competition:
     - "historias de justicia laboral"
 
   discovery:
-    max_searches_per_scan: 4     # 100 unidades cada una — es el gasto dominante
+    max_searches_per_scan: 4     # 1 llamada del cupo PROPIO de 100/dia (no del
+                                 # bote de unidades). Es el recurso mas escaso.
     max_competitors: 60          # canales activos que se miden por corrida (2 unidades c/u)
     videos_per_channel: 15       # últimos N videos por canal (2 unidades por canal)
     min_subscribers: 5000

@@ -155,7 +155,9 @@ que promueve a regla).
   (`--apply-trends` modifica `prompts/reddit_story.txt`; es reversible con `remove_from_prompt`, pero
   sigue siendo su decisión).
 - **El tope se resetea por día natural UTC**, igual que la cuota de la YouTube Data API.
-- **La cuota de YouTube es aparte** (10.000 unidades/día): `search.list` cuesta 100, el resto 1. Un
+- **La cuota de YouTube es aparte y son TRES cupos** (ver `QUOTA_BUCKET`): 100 llamadas/día de
+  `search.list`, 100 de `videos.insert`, y 10.000 unidades para el resto (1 por lectura, 50 la
+  miniatura). Un
   escaneo de 40 canales ≈ 90 unidades. No compite con la de OpenRouter.
 - **Si `pool/` está por debajo de 20 min**, no hay producción posible: la corrida es solo ingesta.
   Dilo y no gastes peticiones.

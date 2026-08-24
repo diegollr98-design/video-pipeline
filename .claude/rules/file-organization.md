@@ -24,7 +24,9 @@ prompts/                  ← reddit_story.txt, short_story.txt
 assets/                   ← plantilla 3.png, woosh, .tint_index
 seeds/                    ← seeds de handoff a sesión fresca (PASO 0: /seed-review)
 test_e2e/                 ← FIXTURE del gate: clip corto + config propia. Es lo que corre /eval
-data/                     ← state de competencia, informes, baselines de /eval (gitignored)
+data/                     ← state de competencia e informes (gitignored). EXCEPCION:
+                            `data/eval/*.json` SI se versiona — son las cifras que el README
+                            cita como prueba, y una cifra que no se puede abrir no es evidencia
 input/ pool/ temp/ output/ shorts_tiktok/   ← media (gitignored, NUNCA se borran a la ligera)
 .claude/
   rules/                  ← instrucciones modulares (este archivo)

@@ -2,8 +2,13 @@
 
 DECISIONES TOMADAS POR DIEGO (11-ago-2026), que son las que dan forma a esto:
   1. Se sube en **privado**. Nadie lo publica salvo él, desde YouTube Studio.
-  2. Se sube **solo el vídeo largo**. Los ~50 shorts NO: 51 subidas x 1.600 =
-     81.600 unidades frente a las 10.000 diarias.
+  2. Se sube **solo el vídeo largo**. Los ~50 shorts NO: el cupo de subidas
+     son 100 llamadas/dia (ver QUOTA_BUCKET), asi que 51 subidas se comerian
+     mas de la mitad del dia en una sola corrida — y la miniatura de cada una
+     cuesta ademas 50 unidades del bote de 10.000, o sea 2.550 solo en
+     miniaturas. La razon de fondo no es la cuota: un short subido en
+     automatico se salta el ojo de Diego, que es el guardia que este proyecto
+     no delega.
   3. Se dispara desde una **cola con su OK** en el dashboard, no automáticamente
      al terminar la corrida. El modo de fallo de este proyecto es un vídeo que
      PARECE terminado, así que su ojo sigue en el bucle.

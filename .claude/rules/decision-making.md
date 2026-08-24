@@ -91,7 +91,8 @@ dejes para que la encuentre una corrida de producción de 40 minutos.
 
 ## 15. El coste es ciudadano de primera clase
 Aquí el coste **no es dinero, es cuota**: el tope de peticiones/día de los modelos `:free` de
-OpenRouter y las **10.000 unidades/día** de la YouTube Data API. Un cambio que sube las peticiones por
+OpenRouter y los **tres cupos diarios** de la YouTube Data API (100 búsquedas, 100 subidas, 10.000
+unidades para el resto). Un cambio que sube las peticiones por
 vídeo es un cambio de arquitectura disfrazado: dilo y recalcula, aunque nadie lo pregunte.
 
 **El tope concreto NO se lee de aquí ni de `CLAUDE.md`** — es estado de cuenta y caduca. Verifícalo con

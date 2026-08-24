@@ -89,6 +89,8 @@ Decisiones que **no tomes tú solo** — plánteaselas a Diego:
 - El **outlier** va por curva logarítmica saturada, **no** por percentil; engagement, velocidad y
   frescura **sí** por percentil.
 - `search.list` cuesta **100** unidades; `channels.list`/`playlistItems.list`/`videos.list`, **1**.
+  > ⚠️ CORRECCIÓN (24-ago-2026): dato caducado. `search.list` es **1 llamada de un cupo propio de
+  > 100/día**, no 100 unidades del bote. Ver `QUOTA_BUCKET`. [QUOTA-02]
 - Un corte de cuota **no debe rechazar canales**, y los rechazos se reconsideran (`revive_rejected`).
 - El heurístico de idioma **no puede usar palabras ambiguas** ("me", "y").
 
