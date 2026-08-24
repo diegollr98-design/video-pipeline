@@ -199,8 +199,8 @@ def run_competition_scan(config, args):
     logger.info(
         f"Competidores activos: {report['competitors_active']} | "
         f"videos analizados: {report['videos_analyzed']} | "
-        f"cuota usada: {report['quota_used_this_run']} unidades "
-        f"({report['quota_used_today']}/{report['quota_daily_limit']} hoy)"
+        f"cuota de esta corrida: {report['quota_used_this_run']} | "
+        f"hoy: {report['quota_used_today']} sobre {report.get('quota_limits')}"
     )
 
     if not report["viral"]:

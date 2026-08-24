@@ -670,11 +670,18 @@ def _render_competencia():
     state_comp = competitor_scout.load_state(config)
     quota_today = state_comp.get("quota", {})
     if quota_today.get("date") == datetime.now(timezone.utc).strftime("%Y-%m-%d"):
+        # Tres cupos independientes, no uno: `search.list` y `videos.insert`
+        # tienen el suyo propio y no salen del bote de unidades.
+        _lim = dict(competitor_scout.DEFAULT_QUOTA_LIMITS)
+        _lim["units"] = int((comp_cfg.get("quota") or {}).get("daily_limit", 10000))
         used = int(quota_today.get("units", 0))
-        limit = int((comp_cfg.get("quota") or {}).get("daily_limit", 10000))
         col_scan3.progress(
-            min(1.0, used / limit) if limit else 0.0,
-            text=f"Cuota de hoy: {used:,} / {limit:,} unidades",
+            min(1.0, used / _lim["units"]) if _lim["units"] else 0.0,
+            text=(
+                f"Cuota de hoy: {used:,} / {_lim['units']:,} unidades · "
+                f"búsquedas {int(quota_today.get('search', 0))}/{_lim['search']} · "
+                f"subidas {int(quota_today.get('upload', 0))}/{_lim['upload']}"
+            ),
         )
 
     if do_scan or do_remeasure:

@@ -39,7 +39,7 @@ Todos los bugs graves de este repo produjeron **vídeos completos y reproducible
 - **Verificación por EJECUCIÓN, nunca por informe.** Corre el comando tú y pega la SALIDA REAL. "Reportó que está OK" no cierra nada.
 - **Una garantía prometida en el prompt no está garantizada hasta que un `if` la fuerza.** Ya falló tres veces aquí (comas, título, variedad de shorts).
 - Cambios en **superficies sensibles** (alineación, limpieza de texto, ingesta, historia, composición, cuota — tabla en `produccion-loop.md` §B) → **`/eval` antes de cerrar** + `output-audit`.
-- **El coste es cuota, no dinero:** 1000 peticiones/día en OpenRouter free (verificado ago 2026: 10 créditos comprados), 10.000 unidades/día en la YouTube API. Un cambio que sube las peticiones por vídeo se reporta aunque nadie lo pregunte.
+- **El coste es cuota, no dinero:** 1000 peticiones/día en OpenRouter free (verificado ago 2026: 10 créditos comprados) y, en la YouTube API, **tres cupos**: 100 búsquedas/día, 100 subidas/día y 10.000 unidades/día para el resto. Un cambio que sube las peticiones por vídeo se reporta aunque nadie lo pregunte.
 
 ## LO QUE NUNCA DEBES HACER
 
@@ -126,7 +126,7 @@ Fase 2b — Shorts (opcional, si enabled: true en config):
 
 Fase 3 — Competencia (independiente, no produce videos):
   config keywords + seed_channels
-    -> search.list (100 unidades c/u) -> canales candidatos
+    -> search.list (1 llamada de un cupo propio de 100/dia) -> canales candidatos
     -> channels.list -> filtros (subs, idioma, país)
     -> playlistItems.list (uploads) + videos.list -> últimos N videos por canal
     -> filtro de formato (descarta canales solo-shorts)
@@ -326,7 +326,8 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
 - Conteo de shorts desde disco (`len(glob(...))`) para evitar colisiones de numeración
 
 ### Competencia — cuota de la YouTube API
-- `search.list` cuesta **100 unidades**; `channels.list`, `playlistItems.list` y `videos.list` cuestan **1** (hasta 50 IDs por llamada)
+- La cuota son **TRES cupos independientes**, no un bote unico (verificado contra la fuente oficial el 24-ago-2026; **este dato caduca, re-verificalo**): **100 llamadas/dia de `search.list`**, **100 llamadas/dia de `videos.insert`**, y **10.000 unidades/dia para todo lo demas**. `channels.list`, `playlistItems.list` y `videos.list` cuestan 1 unidad (hasta 50 IDs por llamada); `thumbnails.set`, 50
+- Este apartado dijo durante meses que `search.list` costaba **100 unidades** y una subida **1.600**, que era el modelo VIEJO de Google. El error iba en las dos direcciones: bloqueaba la 7.ª subida del dia (el limite real son 100) y dejaba el cupo de busquedas **sin vigilar**. Arreglado en `QUOTA_BUCKET` (`competitor_scout.py`) [QUOTA-02]
 - Por eso los últimos videos de un canal se leen por su **playlist de subidas**, NO con search. Un escaneo de 40 canales cuesta ~90 unidades; el gasto dominante son las búsquedas de descubrimiento
 - El gasto se contabiliza por día natural (UTC) en `data/competitors.json` y se corta **antes** de que Google devuelva 403
 - Las keywords **rotan** entre escaneos (`keyword_offset` en el state): con 4 búsquedas por corrida y 8 keywords, no se gastan siempre las mismas

@@ -37,24 +37,36 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://www.googleapis.com/youtube/v3"
 
-# Coste en unidades de cuota de cada endpoint que usamos.
-QUOTA_COST = {
-    "search": 100,
-    "channels": 1,
-    "playlistItems": 1,
-    "videos": 1,
-    # Subir un vídeo cuesta 1.600 de las 10.000 unidades diarias, y salen del
-    # MISMO cupo que el análisis de competencia: 6 subidas al día agotan la
-    # cuota entera. Vive en esta tabla, y no en el uploader, para que haya un
-    # único contador — dos contadores distintos harían que el corte preventivo
-    # de `QuotaMeter` dejara de proteger.
-    "videosInsert": 1600,
-    # La miniatura se sube aparte del vídeo (`thumbnails.set`) y cuesta 50. Sin
-    # esta línea, `thumbnail_generator.py` producía una miniatura cuidada que no
-    # llegaba a YouTube: la portada acababa siendo un fotograma al azar del
-    # gameplay. Una subida completa son 1.650 unidades = 6 al día.
-    "thumbnailsSet": 50,
+# Reparto de cuota de la YouTube Data API v3. VERIFICADO contra la fuente
+# oficial el 24-ago-2026 (T1: un dato externo escrito en un .md es una
+# afirmacion, no un hecho — este caduca, re-verificalo antes de decidir):
+#   https://developers.google.com/youtube/v3/getting-started
+#   "a default quota allocation of 100 search.list calls, 100 videos.insert
+#    calls, and 10,000 units per day combined for all other endpoints"
+#
+# Son TRES cupos INDEPENDIENTES, no un bote unico. Esta tabla cobraba antes
+# search=100 y videosInsert=1600 unidades del bote de 10.000, que era el
+# modelo VIEJO de Google. Consecuencias medidas de aquel error, en las dos
+# direcciones: (a) el preflight del subidor bloqueaba la 7.ª subida del dia
+# cuando el limite real son 100; (b) el cupo de busquedas no lo vigilaba
+# NADIE, porque su gasto se cargaba a un bote que no es el suyo.
+QUOTA_BUCKET = {
+    # endpoint        cupo        coste dentro de SU cupo
+    "search":        ("search", 1),
+    "videosInsert":  ("upload", 1),
+    "thumbnailsSet": ("units", 50),
+    "channels":      ("units", 1),
+    "playlistItems": ("units", 1),
+    "videos":        ("units", 1),
 }
+
+# Coste dentro de su propio cupo. Se conserva para los sitios que suman costes
+# HOMOGENEOS (todos del cupo "units"); para decidir si algo cabe, usa el meter,
+# que es el unico que sabe a que cupo va cada endpoint.
+QUOTA_COST = {k: c for k, (_b, c) in QUOTA_BUCKET.items()}
+
+DEFAULT_QUOTA_LIMITS = {"search": 100, "upload": 100, "units": 10000}
+
 
 # Marcadores de idioma. La API no rellena defaultAudioLanguage de forma fiable,
 # así que el idioma se deduce del texto.
@@ -262,14 +274,20 @@ def save_state(state, config):
     """
     state["updated_at"] = _now().isoformat()
     path = state_path(config)
-    pending_quota = int(state.pop("_quota_pending", 0) or 0)
+    pending = state.pop("_quota_pending", None) or {}
+    if not isinstance(pending, dict):
+        # State/proceso viejo: `_quota_pending` era un escalar de "units".
+        pending = {"units": int(pending or 0)}
 
     with _state_lock(path):
         disk_state = _load_state_file(path)
         today = _now().strftime("%Y-%m-%d")
         disk_quota = (disk_state or {}).get("quota") or {}
-        base = int(disk_quota.get("units", 0)) if disk_quota.get("date") == today else 0
-        state["quota"] = {"date": today, "units": base + pending_quota}
+        vigente = disk_quota.get("date") == today
+        state["quota"] = {"date": today}
+        for b in DEFAULT_QUOTA_LIMITS:
+            base = int(disk_quota.get(b, 0)) if vigente else 0
+            state["quota"][b] = base + int(pending.get(b, 0) or 0)
         _atomic_write_json(path, state)
 
 
@@ -298,37 +316,64 @@ def _now():
 
 
 class QuotaMeter:
-    """Contabiliza unidades gastadas por día natural (UTC) sobre el state."""
+    """Contabiliza los TRES cupos diarios (dia natural UTC) sobre el state.
 
-    def __init__(self, state, daily_limit):
-        self.daily_limit = daily_limit
+    Un solo contador para todo el proyecto: el escaneo de competencia y el
+    subidor de videos comparten cupos, asi que dos contadores distintos harian
+    que el corte preventivo dejara de proteger.
+    """
+
+    def __init__(self, state, daily_limit=None, limits=None):
+        self.limits = dict(DEFAULT_QUOTA_LIMITS)
+        if limits:
+            self.limits.update(
+                {k: int(v) for k, v in limits.items() if k in self.limits}
+            )
+        if daily_limit is not None:
+            # Compat: `config.competition.quota.daily_limit` siempre significo
+            # el cupo de UNIDADES, que es el unico que existia.
+            self.limits["units"] = int(daily_limit)
+        self.daily_limit = self.limits["units"]
+
         self.today = _now().strftime("%Y-%m-%d")
         quota = state.get("quota", {})
-        # Si el contador es de otro día, empieza de cero.
-        self.spent = int(quota.get("units", 0)) if quota.get("date") == self.today else 0
-        self.spent_this_run = 0
+        vigente = quota.get("date") == self.today
+        # Un state viejo solo trae "units": los otros cupos arrancan a 0, que
+        # es lo correcto (nunca se contaron).
+        self.spent = {
+            b: (int(quota.get(b, 0)) if vigente else 0) for b in self.limits
+        }
+        self.spent_this_run = {b: 0 for b in self.limits}
         self._state = state
 
-    def remaining(self):
-        return max(0, self.daily_limit - self.spent)
+    def bucket(self, endpoint):
+        return QUOTA_BUCKET[endpoint][0]
+
+    def remaining(self, bucket="units"):
+        return max(0, self.limits[bucket] - self.spent[bucket])
 
     def can_afford(self, endpoint):
-        return QUOTA_COST[endpoint] <= self.remaining()
+        b, cost = QUOTA_BUCKET[endpoint]
+        return cost <= self.remaining(b)
+
+    def resumen(self):
+        """`search 4/100 · upload 0/100 · units 312/10000` — para logs y UI."""
+        return " · ".join(
+            f"{b} {self.spent[b]}/{self.limits[b]}" for b in ("search", "upload", "units")
+        )
 
     def charge(self, endpoint):
-        cost = QUOTA_COST[endpoint]
-        if cost > self.remaining():
+        b, cost = QUOTA_BUCKET[endpoint]
+        if cost > self.remaining(b):
             raise QuotaExhausted(
-                f"Cuota diaria agotada: {self.spent}/{self.daily_limit} unidades usadas hoy"
+                f"Cupo diario de '{b}' agotado: {self.spent[b]}/{self.limits[b]} "
+                f"usado hoy (lo pedia el endpoint {endpoint}). "
+                f"Se restablece a medianoche UTC."
             )
-        self.spent += cost
-        self.spent_this_run += cost
-        self._state["quota"] = {"date": self.today, "units": self.spent}
-        # Delta pendiente de persistir por ESTE meter desde que se cargó el
-        # state (no acumulado entre instancias). `save_state` lo usa para el
-        # read-modify-write sobre el contador en disco: así el gasto de este
-        # proceso se SUMA al de disco en vez de pisarlo, aunque otro proceso
-        # (p. ej. `youtube_uploader.py`, mismo contador) haya guardado en medio.
+        self.spent[b] += cost
+        self.spent_this_run[b] += cost
+        self._state["quota"] = {"date": self.today, **self.spent}
+        self._state["_quota_pending"] = dict(self.spent_this_run)
         self._state["_quota_pending"] = self.spent_this_run
 
 
@@ -1355,6 +1400,7 @@ def scan(config, discover=True, progress=None):
             "quota_used_this_run": meter.spent_this_run,
             "quota_used_today": meter.spent,
             "quota_daily_limit": meter.daily_limit,
+            "quota_limits": dict(meter.limits),
             "keywords_used": keywords_used if discover else [],
             "competitors_total": len(competitors),
             "competitors_active": len(active_records),
@@ -1368,7 +1414,7 @@ def scan(config, discover=True, progress=None):
 
         notify(
             f"Escaneo completo: {len(active_records)} competidores activos, "
-            f"{len(fresh)} videos analizados, {meter.spent_this_run} unidades de cuota"
+            f"{len(fresh)} videos analizados · cuota {meter.resumen()}"
         )
         for w in warnings:
             logger.warning(f"Aviso: {w}")

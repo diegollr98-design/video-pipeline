@@ -9,7 +9,9 @@ DECISIONES TOMADAS POR DIEGO (11-ago-2026), que son las que dan forma a esto:
      PARECE terminado, así que su ojo sigue en el bucle.
 
 La cuota se carga al MISMO contador que el análisis de competencia
-(`QuotaMeter` sobre `data/competitors.json`): son el mismo cupo de 10.000/día.
+(`QuotaMeter` sobre `data/competitors.json`): comparten los cupos diarios.
+Ojo: `videos.insert` NO sale del bote de 10.000 unidades, tiene su propio cupo
+de 100 llamadas/dia (ver QUOTA_BUCKET en competitor_scout.py).
 
 Autenticación: OAuth de aplicación de escritorio. Hace falta un
 `client_secret.json` descargado de Google Cloud Console (ver `credentials_help`).
@@ -296,13 +298,24 @@ def puede_subir(config):
     limite = ((config.get("competition") or {}).get("quota") or {}).get(
         "daily_limit", 10000)
     meter = QuotaMeter(state, limite)
-    coste = QUOTA_COST["videosInsert"]
-    if coste > meter.remaining():
+    # `videos.insert` NO sale del bote de unidades: tiene su propio cupo de
+    # llamadas al dia. Preguntar por `remaining()` (que es el de unidades)
+    # respondia sobre el cupo equivocado.
+    if not meter.can_afford("videosInsert"):
         return False, (
-            f"Cuota de YouTube insuficiente: quedan {meter.remaining()} unidades "
-            f"de {limite} y una subida cuesta {coste}. Se restablece a medianoche UTC."
+            f"Cupo de subidas de YouTube agotado: {meter.spent['upload']}/"
+            f"{meter.limits['upload']} subidas hoy. Se restablece a medianoche UTC."
         )
-    return True, f"Quedan {meter.remaining()} unidades; la subida gastará {coste}."
+    # La miniatura va aparte y esa SI sale del bote de unidades.
+    if not meter.can_afford("thumbnailsSet"):
+        return False, (
+            f"Quedan subidas ({meter.remaining('upload')}) pero no unidades para la "
+            f"miniatura: {meter.spent['units']}/{meter.limits['units']} usadas hoy."
+        )
+    return True, (
+        f"Quedan {meter.remaining('upload')} subidas de {meter.limits['upload']} hoy; "
+        f"la miniatura gastará {QUOTA_COST['thumbnailsSet']} unidades."
+    )
 
 
 def _cobra_cuota(config):
@@ -312,7 +325,7 @@ def _cobra_cuota(config):
     meter = QuotaMeter(state, limite)
     meter.charge("videosInsert")       # lanza QuotaExhausted si no cabe
     save_state(state, config)
-    return meter.spent, limite
+    return meter.resumen(), limite
 
 
 def thumbnail_path_for(video_path):
@@ -332,7 +345,7 @@ def _cobra_cuota_miniatura(config):
     meter = QuotaMeter(state, limite)
     meter.charge("thumbnailsSet")      # lanza QuotaExhausted si no cabe
     save_state(state, config)
-    return meter.spent, limite
+    return meter.resumen(), limite
 
 
 def subir_miniatura(video_id, thumbnail_path, config, creds=None):
@@ -510,7 +523,7 @@ def subir_video(video_path, config, titulo=None, descripcion=None, tags=None,
     # La cuota se cobra en cuanto YouTube acepta la sesión: el gasto es real
     # aunque los bytes fallen a mitad, así que se apunta ya y no al final.
     gastado, limite = _cobra_cuota(config)
-    logger.info(f"Subida iniciada; cuota de YouTube {gastado}/{limite} unidades hoy")
+    logger.info(f"Subida iniciada; cuota de YouTube -> {gastado}")
 
     subidos = 0
     with open(video_path, "rb") as f:
