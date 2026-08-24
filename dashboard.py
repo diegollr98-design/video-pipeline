@@ -156,9 +156,9 @@ with tab_roadmap:
             "- **✅ Aplicar** — Mete esas directrices en el prompt que escribe las "
             "historias. A partir de ahí, los videos nuevos las siguen. Se puede "
             "quitar en un clic.\n\n"
-            "*Consume cuota de la API de YouTube (10.000 unidades gratis al día). "
-            "Un escaneo típico gasta ~500, así que puedes escanear varias veces "
-            "al día sin problema.*"
+            "*Consume cuota de la API de YouTube. Un escaneo con descubrimiento "
+            "gasta **4 búsquedas** (de 100/día) y **~81 unidades** (de 10.000). "
+            "Lo que ata son las búsquedas: caben ~25 escaneos completos al día.*"
         )
 
     with st.expander("⚙️ Config — los ajustes"):
@@ -667,8 +667,9 @@ def _render_competencia():
                 "4. Añade esta línea al archivo `.env` del proyecto:\n"
                 "```\nYOUTUBE_API_KEY=AIza...\n```\n"
                 "5. Reinicia el dashboard.\n\n"
-                "La cuota gratuita es de **10.000 unidades al día**; un escaneo "
-                "completo gasta unas 500."
+                "La cuota son TRES cupos diarios: **100 búsquedas**, **100 subidas** "
+                "y **10.000 unidades** para el resto. Un escaneo completo gasta 4 "
+                "búsquedas y ~81 unidades, así que caben ~25 al día."
             )
         return
 
@@ -682,11 +683,11 @@ def _render_competencia():
 
     do_scan = col_scan1.button(
         "🔎 Escanear competencia", type="primary", key="comp_scan",
-        help="Busca canales nuevos + mide los ya conocidos (~500 unidades de cuota)",
+        help="Busca canales nuevos + mide los ya conocidos (4 búsquedas de 100/día + ~81 unidades)",
     )
     do_remeasure = col_scan2.button(
         "♻️ Solo re-medir", key="comp_remeasure",
-        help="No busca canales nuevos; solo actualiza métricas de los conocidos (~90 unidades)",
+        help="No busca canales nuevos; solo actualiza métricas de los conocidos (~81 unidades, 0 búsquedas)",
     )
 
     state_comp = competitor_scout.load_state(config)

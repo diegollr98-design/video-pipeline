@@ -237,6 +237,11 @@ la clase entera desaparece por construcción en lugar de volverse improbable.
 > - ✅ **Higiene de publicación: limpia.** 0 hits de `.env`, `client_secret`, `sk-or-`, `AIza` en
 >   **todas** las revisiones. No hay nada que rotar. *(Los HTML de `PORTAFOLIO/` sí siguen en el
 >   historial de git: decisión de Diego si importa.)*
+>
+> ⚠️ ESA ÚLTIMA FRASE YA NO ES CIERTA (24-ago-2026): los 4 `PORTAFOLIO/*.html` se purgaron del
+> historial con `git filter-repo` antes de publicar, junto a `assets/3.png` y el `.mp3` de stock.
+> Se deja el texto original y se corrige aquí en vez de reescribirlo, porque es un registro
+> fechado — pero un lector externo la leería como estado actual. [DOC-01]
 
 ---
 

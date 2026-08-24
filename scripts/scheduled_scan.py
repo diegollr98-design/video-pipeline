@@ -5,7 +5,8 @@ producción y la refutó — el pipeline tiene gates humanos por decisión expl�
 de Diego (la subida a YouTube sale de una cola con su OK en el dashboard), así
 que un disparo de producción desatendido entrega un MP4 a una cola que espera
 un click (autonomía ganada ~= 0) y a cambio gasta disco y cuota sin
-supervisión. El escaneo es barato (~470 unidades medidas de 10.000/día), no
+supervisión. El escaneo es barato (4 búsquedas del cupo de 100/día + ~81
+unidades de las 10.000; ver QUOTA_BUCKET), no
 toca `pool/`, `input/` ni `output/`, y no requiere ningún gate humano.
 
 Este script NUNCA importa funciones de fase (`main.py` en el mismo proceso):

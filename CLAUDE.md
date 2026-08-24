@@ -76,7 +76,7 @@ Todos los bugs graves de este repo produjeron **vídeos completos y reproducible
 
 - **Python 3.x** — lenguaje principal
 - **OpenRouter** (API gratuita) — generación de historias via `nvidia/nemotron-3-ultra-550b-a55b:free`
-- **YouTube Data API v3** (10.000 unidades/día gratis) — análisis de competencia
+- **YouTube Data API v3** (tres cupos gratis/día: 100 búsquedas · 100 subidas · 10.000 unidades) — análisis de competencia
 - **Streamlit** — dashboard de operación
 - **edge-tts** (gratis) — text-to-speech español de España (hombre/mujer auto)
 - **stable-ts + faster-whisper** — forced alignment para subtítulos sincronizados al 100%
@@ -328,7 +328,7 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
 ### Competencia — cuota de la YouTube API
 - La cuota son **TRES cupos independientes**, no un bote unico (verificado contra la fuente oficial el 24-ago-2026; **este dato caduca, re-verificalo**): **100 llamadas/dia de `search.list`**, **100 llamadas/dia de `videos.insert`**, y **10.000 unidades/dia para todo lo demas**. `channels.list`, `playlistItems.list` y `videos.list` cuestan 1 unidad (hasta 50 IDs por llamada); `thumbnails.set`, 50
 - Este apartado dijo durante meses que `search.list` costaba **100 unidades** y una subida **1.600**, que era el modelo VIEJO de Google. El error iba en las dos direcciones: bloqueaba la 7.ª subida del dia (el limite real son 100) y dejaba el cupo de busquedas **sin vigilar**. Arreglado en `QUOTA_BUCKET` (`competitor_scout.py`) [QUOTA-02]
-- Por eso los últimos videos de un canal se leen por su **playlist de subidas**, NO con search. Un escaneo de 40 canales cuesta ~90 unidades; el gasto dominante son las búsquedas de descubrimiento
+- Por eso los últimos videos de un canal se leen por su **playlist de subidas**, NO con search. Un escaneo de 40 canales cuesta **81 unidades + 4 búsquedas**. Sigue siendo la optimización correcta, pero por otra razón que antes: las búsquedas ya no gastan unidades, gastan del cupo más escaso. **Lo que ata son las búsquedas** (100/día → ~25 escaneos), no las unidades (~123)
 - El gasto se contabiliza por día natural (UTC) en `data/competitors.json` y se corta **antes** de que Google devuelva 403
 - Las keywords **rotan** entre escaneos (`keyword_offset` en el state): con 4 búsquedas por corrida y 8 keywords, no se gastan siempre las mismas
 

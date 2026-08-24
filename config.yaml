@@ -139,9 +139,14 @@ story:
   chunk_size: 1800               # 30 min: tamaño del chunk cuando se corta
 
 # === Análisis de competencia (YouTube Data API v3) ===
-# Requiere YOUTUBE_API_KEY en .env. Cuota gratuita: 10.000 unidades/día.
-# Coste real MEDIDO: ~470 unidades un escaneo con descubrimiento, ~120 re-midiendo
-# (--no-discover). Caben unos 20 escaneos completos al día.
+# Requiere YOUTUBE_API_KEY en .env. La cuota son TRES cupos diarios (ver
+# QUOTA_BUCKET en competitor_scout.py): 100 llamadas de search.list, 100 de
+# videos.insert y 10.000 unidades para todo lo demas.
+# Coste real de un escaneo con descubrimiento, calculado con esa tabla:
+#   4 busquedas (cupo search) + 81 unidades (1 channels + 40 playlistItems + 40 videos)
+# Re-midiendo (--no-discover): 0 busquedas y ~81 unidades.
+# LO QUE ATA SON LAS BUSQUEDAS, no las unidades: 100/4 = ~25 escaneos completos
+# al dia, no los ~123 que saldrian de mirar solo el bote de unidades.
 #
 # EL NICHO: historias de Reddit narradas en PRIMERA PERSONA con gameplay de fondo.
 # No basta con "español + formato largo": por ahí entran granjas de drama asiático

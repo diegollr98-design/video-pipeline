@@ -1,4 +1,10 @@
 > ✅ EJECUTADO (14-ago-2026).
+>
+> ⚠️ DATO CADUCADO EN TODO ESTE DOCUMENTO (anotado el 24-ago-2026): las cifras de cuota de
+> YouTube que aparecen abajo (`search.list` = 100 unidades, ~470 por escaneo) son del modelo
+> VIEJO de Google. Hoy son TRES cupos: 100 búsquedas/día, 100 subidas/día y 10.000 unidades
+> para el resto — un escaneo cuesta **4 búsquedas + 81 unidades**. Ver `QUOTA_BUCKET` en
+> `competitor_scout.py`, que cita la fuente oficial con su fecha. [QUOTA-02]
 
 # SEED C — Que el análisis de competencia llegue a los shorts y se ejecute solo
 

@@ -1,4 +1,12 @@
 > 🔵 ABIERTO.
+>
+> ⚠️ DATO CADUCADO EN TODO ESTE DOCUMENTO (anotado el 24-ago-2026): las cifras de cuota de
+> YouTube de abajo son del modelo VIEJO de Google. Hoy son TRES cupos diarios — 100 llamadas
+> de `search.list`, 100 de `videos.insert` y 10.000 unidades para el resto. Una subida cuesta
+> **1** unidad de su propio cupo (no 1.600), y un escaneo **4 búsquedas + 81 unidades** (no
+> ~470). Ver `QUOTA_BUCKET` en `competitor_scout.py`, que cita la fuente oficial con su fecha.
+> La conclusión de no subir los shorts se mantiene, pero por otra razón: se saltarían la
+> revisión humana. [QUOTA-02]
 
 # SEED B — Que el vídeo se publique SOLO (último paso de "autónomo")
 
