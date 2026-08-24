@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (14-ago-2026).
+
 # SEED A — La ventana aplastada del alineador (diagnóstico CERRADO, falta el fix)
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

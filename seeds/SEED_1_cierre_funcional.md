@@ -1,3 +1,5 @@
+> ⛔ SUPERADO — no ejecutar.
+
 # SEED 1 — Cierre funcional del pipeline (3 huecos pequeños)
 
 > ⛔ **PARCIALMENTE HECHO — NO EJECUTAR TAL CUAL.** `components.html` ya está fuera. Los otros dos

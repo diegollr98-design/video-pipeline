@@ -25,8 +25,8 @@ Correr **en background** y capturar la salida. Un arranque limpio no imprime tra
 **Un `Traceback` en el arranque es un fallo aunque la página cargue** — Streamlit renderiza
 parcialmente y esconde el error abajo.
 
-Comprueba que las 7 pestañas montan (Roadmap, Estado, Operar, Progreso, Resultados, Competencia,
-Config). Recuerda que `st.components.v1.html` (diagrama del Roadmap) está deprecado desde 2026-06-01:
+Comprueba que las 8 pestañas montan (Roadmap, Estado, Operar, Progreso, Resultados, Subir,
+Competencia, Config). Recuerda que `st.components.v1.html` (diagrama del Roadmap) está deprecado desde 2026-06-01:
 un warning ahí es esperado, un error no.
 
 ## C. Pipeline

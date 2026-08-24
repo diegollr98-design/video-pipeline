@@ -1,0 +1,85 @@
+{
+  "video": "test_e2e/output/video_004_final.mp4",
+  "ass": "test_e2e/temp/video_004_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 450,
+  "n_palabras_whisper": 483,
+  "n_emparejadas": 438,
+  "cobertura": 0.9733,
+  "error_medio_abs": 0.0829,
+  "error_max_abs": 0.5,
+  "sesgo": -0.0649,
+  "error_p95": 0.15,
+  "palabras_muy_tarde": 0,
+  "peor_tramo": {
+    "mediana": -0.14,
+    "t": 73.83,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "ME",
+      "hueco": 0.36,
+      "t": 31.06
+    },
+    {
+      "tras": "RESONABA",
+      "hueco": 0.44,
+      "t": 38.5
+    },
+    {
+      "tras": "UN",
+      "hueco": 0.38,
+      "t": 48.04
+    },
+    {
+      "tras": "PUNTEADA",
+      "hueco": 0.6,
+      "t": 56.74
+    },
+    {
+      "tras": "MI",
+      "hueco": 0.46,
+      "t": 65.59
+    },
+    {
+      "tras": "QUE",
+      "hueco": 0.47,
+      "t": 83.05
+    },
+    {
+      "tras": "QUE",
+      "hueco": 0.44,
+      "t": 92.82
+    },
+    {
+      "tras": "IR",
+      "hueco": 1.07,
+      "t": 121.94
+    },
+    {
+      "tras": "MI",
+      "hueco": 0.46,
+      "t": 129.39
+    },
+    {
+      "tras": "QUE",
+      "hueco": 0.44,
+      "t": 139.17
+    }
+  ],
+  "medicion_valida": true,
+  "contexto": {
+    "cambios": "CIERRE-01 (garantia de desenlace + truncado que no decapita), ANCLA-05 (interior fabricado), TITULO-01 (eco del titulo), auditor cableado",
+    "baseline_comparado": "data/eval/2026-08-10-postfix-ancla.json (video_003)",
+    "OJO_COMPARACION_CONFUNDIDA": "El fixture GENERA UNA HISTORIA NUEVA cada corrida, asi que baseline y run no comparten texto. video_003: 3.85 comas/100, frase maxima 52 palabras. video_004: 1.84 comas/100, frase maxima 106. Esa es la variable conocida que mueve pausas inventadas y dificultad de alineacion [COMA-02].",
+    "ab_controlado": "Misma historia (video_003), codigo del 10-ago vs codigo de hoy: diferencia media 0.0053 s, p95 0.0200 s, max 0.1425 s sobre 465 pares. El cambio NO mueve la alineacion.",
+    "ancla05_disparos": 0,
+    "ancla05_nota": "0 disparos en las 5 alineaciones de la corrida: el codigo nuevo es equivalente al viejo aqui",
+    "peticiones_openrouter": 6,
+    "duracion_min": 21.6,
+    "voz_sin_subtitulo_s": 0.0,
+    "racha_maxima_palabras_aplastadas": 2,
+    "titulo_caracteres": 191
+  }
+}

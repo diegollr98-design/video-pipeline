@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 Diego Tomás Llopis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+ALCANCE / SCOPE
+
+Esta licencia cubre el CODIGO Y LA DOCUMENTACION de este repositorio.
+
+NO cubre los archivos multimedia de terceros, que por ese motivo NO se
+distribuyen aqui (ver `assets/README.md`):
+
+  - `assets/3.png` — plantilla de miniatura. Contiene marcas de terceros
+    (mascota de Reddit, iconos de premios de Reddit, insignia de verificado
+    estilo X/Twitter) compuestas en Canva. No es material propio y no se
+    puede sublicenciar.
+  - `assets/stereogenicstudio-swish-swoosh-woosh-sfx-27-357164.mp3` — efecto
+    de sonido de banco de stock. Su licencia permite el uso, no la
+    redistribucion del archivo suelto.
+
+Tampoco cubre el gameplay, el audio generado ni los videos producidos por el
+pipeline: nada de eso se versiona en este repositorio.
+
+This license covers the CODE AND DOCUMENTATION only. Third-party media is not
+distributed with this repository — see `assets/README.md`.

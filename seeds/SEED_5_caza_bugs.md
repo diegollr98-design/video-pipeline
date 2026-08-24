@@ -1,3 +1,5 @@
+> ⛔ SUPERADO — no ejecutar.
+
 # SEED — Caza de bugs en el pipeline y el dashboard
 
 > ⛔ **REEMPLAZADO — NO EJECUTAR.** Usa **`SEED_D_caza_bugs.md`**, que acota la propiedad de

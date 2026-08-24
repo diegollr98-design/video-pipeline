@@ -1,0 +1,52 @@
+{
+  "video": "test_e2e/output/video_003_final.mp4",
+  "ass": "test_e2e/temp/video_003_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 548,
+  "n_palabras_whisper": 572,
+  "n_emparejadas": 544,
+  "cobertura": 0.9927,
+  "error_medio_abs": 0.0877,
+  "error_max_abs": 7.52,
+  "sesgo": -0.0692,
+  "error_p95": 0.13,
+  "palabras_muy_tarde": 0,
+  "peor_tramo": {
+    "mediana": -0.13,
+    "t": 147.08,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "ABIERTA",
+      "hueco": 0.48,
+      "t": 75.69
+    },
+    {
+      "tras": "SUS",
+      "hueco": 0.4,
+      "t": 85.31
+    },
+    {
+      "tras": "GESTORÍA",
+      "hueco": 0.46,
+      "t": 93.99
+    },
+    {
+      "tras": "CAMBIÓ",
+      "hueco": 1.09,
+      "t": 96.71
+    },
+    {
+      "tras": "EL",
+      "hueco": 0.44,
+      "t": 106.0
+    },
+    {
+      "tras": "POR",
+      "hueco": 0.43,
+      "t": 120.03
+    }
+  ],
+  "medicion_valida": true
+}

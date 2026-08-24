@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (12-ago-2026).
+
 # SEED — Revisar los cambios del 12-ago y cerrar lo que queda
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

@@ -1,3 +1,5 @@
+> 🔵 ABIERTO.
+
 # SEED — Lo que queda abierto tras la sesión del 18-ago-2026
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

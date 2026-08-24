@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (10-ago-2026).
+
 # SEED — Validar en paralelo que los últimos cambios son óptimos (v2, REESCRITO)
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

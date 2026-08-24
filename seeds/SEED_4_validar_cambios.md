@@ -1,3 +1,5 @@
+> ⛔ SUPERADO — no ejecutar.
+
 # SEED — Validar en paralelo que los últimos cambios son óptimos
 
 > # ⛔ SUPERADA — NO EJECUTAR. Se conserva solo como registro.

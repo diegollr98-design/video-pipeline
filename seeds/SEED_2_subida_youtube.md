@@ -1,3 +1,5 @@
+> ⛔ SUPERADO — no ejecutar.
+
 # SEED 2 — Subida automática a YouTube (el último paso para ser autónomo)
 
 > ⛔ **SUPERADO — NO EJECUTAR.** La subida se implementó el 11-ago (OAuth, `subir_video`,

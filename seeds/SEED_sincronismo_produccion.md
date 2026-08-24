@@ -1,3 +1,5 @@
+> ⛔ SUPERADO — no ejecutar.
+
 # SEED v2 — Lo que queda del sincronismo de producción
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

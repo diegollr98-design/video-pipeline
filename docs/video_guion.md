@@ -7,7 +7,7 @@
 >
 > Se conserva por historia. Sus referencias a `PORTAFOLIO/YOUTUBE-PIPELINE.html` **ya no resuelven**:
 > las páginas del portafolio salieron del repo el 20-ago (estaban desactualizadas) y viven en
-> `C:/Users/diego/Desktop/PORTAFOLIO/<PROYECTO>/`.
+> `<repo del portafolio>/<PROYECTO>/`.
 
 # Guion — Recorrido de YOUTUBE PIPELINE (vídeo de `#recorrido` del portfolio)
 
@@ -18,8 +18,9 @@
 > preciso, sin hype — la voz del portfolio. Aquí la tesis ("un sistema autónomo, y las medidas que le
 > impiden publicar basura") no se lee: se **ve** ocurriendo.
 >
-> **Enfoque:** NO re-narra el HTML. **Recorre las 7 pestañas reales** del dashboard en el orden del
-> viaje del producto (Roadmap → Estado → Operar → Progreso → Resultados → Competencia → Config) y,
+> **Enfoque:** NO re-narra el HTML. **Recorre las 8 pestañas reales** del dashboard en el orden del
+> viaje del producto (Roadmap → Estado → Operar → Progreso → Resultados → Subir → Competencia →
+> Config) y,
 > dentro de 📡 Progreso, **enseña el pipeline entero corriendo de verdad** — ingesta → historia → voz →
 > alineación → composición → shorts. Es "el sistema en marcha", no diapositivas.
 >
@@ -88,7 +89,7 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 | t | PANTALLA | ES | EN |
 |---|---|---|---|
 | 0:00 | `video_001_final.mp4` a pantalla completa, 6 s en un tramo con subtítulo (palabra en MAYÚSCULAS, centrada). Corte rápido a la rejilla de los 4 shorts verticales. | «Esto —vídeo, voz, subtítulos, miniatura y cuatro shorts verticales— lo ha producido un pipeline entero a partir de una grabación de Minecraft en bruto. Nadie ha tocado un fotograma.» | "This —video, voice, subtitles, thumbnail and four vertical shorts— was produced end to end by a pipeline, out of a raw Minecraft recording. Nobody touched a single frame." |
-| 0:10 | El dashboard abriéndose en **🗺️ Roadmap**, con las 7 pestañas visibles arriba. ⏸ | «Y el modo de fallo de algo así no es que pete: es que entregue un vídeo que **parece terminado** y esté roto donde nadie mira. Te enseño el sistema en marcha, pestaña por pestaña.» | "And the failure mode of something like this isn't crashing: it's shipping a video that **looks finished** and is broken where nobody looks. Let me show you the system running, tab by tab." |
+| 0:10 | El dashboard abriéndose en **🗺️ Roadmap**, con las 8 pestañas visibles arriba. ⏸ | «Y el modo de fallo de algo así no es que pete: es que entregue un vídeo que **parece terminado** y esté roto donde nadie mira. Te enseño el sistema en marcha, pestaña por pestaña.» | "And the failure mode of something like this isn't crashing: it's shipping a video that **looks finished** and is broken where nobody looks. Let me show you the system running, tab by tab." |
 
 ---
 
@@ -219,10 +220,11 @@ Columnas: **PANTALLA** (lo que se graba) · **ES** (voz) · **EN** (voice-over).
 | 🎬 Operar | Modo · Fuente · Opciones (estilo · shorts · dry-run) · **Comando que se ejecutará** · 🚀 Ejecutar pipeline |
 | 📡 Progreso | Estado + PID · **Fase actual** · Log en vivo (tail 200 líneas, refresco 2 s) · ⏹️ Detener corrida |
 | 🖼️ Resultados | 🎬 Videos largos (miniatura · título · MP4 · descargas) · 📱 Shorts |
+| 📤 Subir | cola de vídeos largos pendientes · sube a YouTube en privado con el OK de Diego *(añadida el 11-ago-2026, después de la fecha de verificación de esta tabla)* |
 | 🔍 Competencia | 🔥 Videos virales · 📋 Lista de competidores · 🧠 Qué atacar (debate + bloque inyectado) |
 | ⚙️ Config | 🎙️ TTS · 💬 Subtítulos · 📖 Historia · 📱 Shorts · 🎞️ Video |
 
-*(7 pestañas · el pipeline se lanza como **subproceso** vía `dashboard_runner.launch_run`, nunca importando
+*(8 pestañas · el pipeline se lanza como **subproceso** vía `dashboard_runner.launch_run`, nunca importando
 funciones de fase.)*
 
 ---

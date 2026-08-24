@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (14-ago-2026).
+
 # SEED C — Que el análisis de competencia llegue a los shorts y se ejecute solo
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

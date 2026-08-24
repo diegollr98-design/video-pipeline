@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (10-ago-2026).
+
 # SEED 3 — Producción real de 30 minutos (validación de volumen)
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

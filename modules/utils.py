@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import subprocess
@@ -58,9 +59,45 @@ def load_dotenv(path=".env"):
             os.environ.setdefault(key.strip(), value.strip())
 
 
+def _deep_merge(base, over):
+    """Mezcla `over` sobre `base` sin perder las claves que `over` no menciona."""
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
 def load_config(path="config.yaml"):
+    """Carga la config y le superpone `<nombre>.local.yaml` si existe.
+
+    El fichero versionado lleva rutas RELATIVAS para que un clon arranque sin
+    tocar nada. Cada maquina pone sus rutas reales (aqui el gameplay vive en
+    otro disco) en el `.local.yaml`, que esta gitignored: asi la config del
+    repo deja de ser un fichero que cada uno tiene modificado en su copia.
+    El overlay es opcional; si no existe, el comportamiento es el de antes.
+    """
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    base, ext = os.path.splitext(path)
+    local_path = base + ".local" + (ext or ".yaml")
+    if os.path.isfile(local_path):
+        with open(local_path, "r", encoding="utf-8") as f:
+            overlay = yaml.safe_load(f) or {}
+        if not isinstance(overlay, dict):
+            # §13: nada de fallback mudo. Un overlay malformado se dice.
+            raise ValueError(
+                f"{local_path} no contiene un mapa YAML (leido: {type(overlay).__name__}). "
+                f"Corrigelo o borralo."
+            )
+        _deep_merge(config, overlay)
+        logging.getLogger(__name__).info(
+            f"Config: overlay local aplicado desde {local_path}"
+        )
+
+    return config
 
 
 def ensure_dirs(config):

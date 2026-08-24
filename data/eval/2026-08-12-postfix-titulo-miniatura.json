@@ -1,0 +1,42 @@
+{
+  "video": "test_e2e/output/video_001_final.mp4",
+  "ass": "test_e2e/temp/video_001_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 448,
+  "n_palabras_whisper": 481,
+  "n_emparejadas": 439,
+  "cobertura": 0.9799,
+  "error_medio_abs": 0.1123,
+  "error_max_abs": 0.88,
+  "sesgo": -0.0619,
+  "error_p95": 0.31,
+  "palabras_muy_tarde": 2,
+  "peor_tramo": {
+    "mediana": -0.15,
+    "t": 114.11,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "FAVORITISMO",
+      "hueco": 0.42,
+      "t": 90.08
+    },
+    {
+      "tras": "DE",
+      "hueco": 0.42,
+      "t": 98.26
+    },
+    {
+      "tras": "LA",
+      "hueco": 0.46,
+      "t": 121.35
+    },
+    {
+      "tras": "LLEGA",
+      "hueco": 0.47,
+      "t": 131.32
+    }
+  ],
+  "medicion_valida": true
+}

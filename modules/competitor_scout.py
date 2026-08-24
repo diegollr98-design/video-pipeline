@@ -424,8 +424,8 @@ def _has_cjk_markers(text):
 
 
 # Primera persona: el nicho narra "mi suegra…", el drama doblado narra "ella…".
-# Se guarda como COLUMNA INFORMATIVA, no como filtro: medido, da 0% en rBarra
-# Historias (competidor real) y 75% en Gatito Giratorio (drama doblado).
+# Se guarda como COLUMNA INFORMATIVA, no como filtro: medido, da 0% en un
+# competidor real y 75% en un canal de drama doblado.
 _FIRST_PERSON = re.compile(
     r"\b(mi|mis|me|yo|mí|conmigo|nuestro|nuestra|nos)\b", re.IGNORECASE
 )
@@ -870,7 +870,7 @@ def qualify_channel(record, rules):
 
         # Sin texto suficiente NO se rechaza: se aplaza al filtro de contenido,
         # que juzga por los títulos de sus videos. MEDIDO: rechazaba de golpe a
-        # rBarra Historias (124k subs) y Venganza En Solitario (58.9k), ambos
+        # dos competidores reales (124k y 58,9k subs), ambos
         # españoles, solo porque tenían la descripción del canal vacía y el
         # nombre no llega a las 4 palabras que pide el heurístico. Aplazar
         # cuesta 2 unidades de cuota por canal; equivocarse cuesta un competidor.
@@ -1183,8 +1183,9 @@ def scan(config, discover=True, progress=None):
 
             # Veto del usuario sobre el clasificador: `always_include` manda sobre
             # cualquier rechazo automático. El clasificador emite un JUICIO (p. ej.
-            # descartó rBarra Historias, 124k subs y gameplay 100%, por considerarlo
-            # compilaciones de AskReddit); quien decide si eso compite contigo eres tú.
+            # descartó un competidor real de 124k subs y gameplay 100%, por
+            # considerarlo compilaciones de AskReddit); quien decide si eso
+            # compite contigo eres tú.
             for record in competitors.values():
                 if matches_list(record, always_include) and record["status"] != "active":
                     record["status"] = "active"

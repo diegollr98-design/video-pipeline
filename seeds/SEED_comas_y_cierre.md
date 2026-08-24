@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (12-ago-2026).
+
 # SEED v2 — Cierre del producto: final de historia, subtítulos rotos, miniatura, y prosodia
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

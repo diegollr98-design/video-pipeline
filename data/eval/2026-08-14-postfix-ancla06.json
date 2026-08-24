@@ -1,0 +1,42 @@
+{
+  "video": "test_e2e/output/video_005_final.mp4",
+  "ass": "test_e2e/temp/video_005_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 567,
+  "n_palabras_whisper": 594,
+  "n_emparejadas": 563,
+  "cobertura": 0.9929,
+  "error_medio_abs": 0.0749,
+  "error_max_abs": 0.39,
+  "sesgo": -0.0477,
+  "error_p95": 0.15,
+  "palabras_muy_tarde": 0,
+  "peor_tramo": {
+    "mediana": -0.1,
+    "t": 133.97,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "GASTADO",
+      "hueco": 0.44,
+      "t": 103.67
+    },
+    {
+      "tras": "PATRIMONIAL",
+      "hueco": 0.5,
+      "t": 127.76
+    },
+    {
+      "tras": "DE",
+      "hueco": 0.36,
+      "t": 143.3
+    },
+    {
+      "tras": "FORTUNA",
+      "hueco": 0.42,
+      "t": 189.03
+    }
+  ],
+  "medicion_valida": true
+}

@@ -7,7 +7,10 @@ paths:
   # verificada por md5 (3bd180e42856978ee4ca0436d260268d) ANTES de borrar el
   # original. `ensure_dirs` y el glob de `main.py:435` usan la ruta tal cual,
   # así que una absoluta funciona sin tocar nada más.
-  input_dir: "D:/YOUTUBE_media/input"
+  # Ruta relativa por defecto para que un clon arranque sin tocar nada.
+  # En la maquina de produccion apunta a otro disco: "D:/YOUTUBE_media/input"
+  # (el gameplay crudo son ~13 GB y C: se quedaba sin espacio).
+  input_dir: "./input"
   output_dir: "./output"
   # También en D: [DISCO-01]. La ingesta escribe en `temp/` una copia del vídeo
   # a TAMAÑO COMPLETO (13,8 GB para un fuente de 12,9 GB) incluso cuando el
@@ -16,7 +19,9 @@ paths:
   # que decía la doc. Medido el 15-ago-2026: con 16 GB libres, ffmpeg murió con
   # `No space left on device` a mitad de la recodificación y dejó un
   # `pool_0002.mp4` TRUNCADO que ningún guardia detectó.
-  temp_dir: "D:/YOUTUBE_media/temp"
+  # Igual que input_dir: relativa por defecto. En produccion:
+  # "D:/YOUTUBE_media/temp" — una corrida larga pide ~17 GB de scratch.
+  temp_dir: "./temp"
   pool_dir: "./pool"             # gameplay limpio listo para usar
   prompt_template: "./prompts/reddit_story.txt"
   short_prompt: "./prompts/short_story.txt"

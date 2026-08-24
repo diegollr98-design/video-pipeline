@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (14-ago-2026).
+
 # SEED D — Caza de bugs, sin pisar a los otros tracks
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

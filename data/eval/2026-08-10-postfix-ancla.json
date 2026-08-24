@@ -1,0 +1,21 @@
+{
+  "video": "test_e2e/output/video_003_final.mp4",
+  "ass": "test_e2e/temp/video_003_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 465,
+  "n_palabras_whisper": 492,
+  "n_emparejadas": 456,
+  "cobertura": 0.9806,
+  "error_medio_abs": 0.043,
+  "error_max_abs": 0.32,
+  "sesgo": -0.0173,
+  "error_p95": 0.09,
+  "palabras_muy_tarde": 0,
+  "peor_tramo": {
+    "mediana": -0.06,
+    "t": 38.42,
+    "palabras": 40
+  },
+  "pausas_fuera_de_puntuacion": [],
+  "medicion_valida": true
+}

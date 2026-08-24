@@ -17,6 +17,16 @@ def _premix_woosh(audio_path, output_path, settle_time):
     ffmpeg = _find_exe("ffmpeg")
 
     if not os.path.isfile(WOOSH_PATH):
+        # §13: nada de fallback mudo. Su gemelo de shorts ya avisaba
+        # (shorts_generator._premix_woosh_short) y aqui se devolvia el audio
+        # sin woosh sin dejar rastro: el video salia sin sonido de intro y
+        # nadie se enteraba. El mp3 es de terceros y no se distribuye con el
+        # repo (ver assets/README.md), asi que en un clon este es el caso NORMAL.
+        logger.warning(
+            f"Woosh no encontrado en {WOOSH_PATH!r}: el video se compone SIN "
+            f"sonido de intro. Es material de terceros y no se distribuye con "
+            f"el repo: ver assets/README.md"
+        )
         return audio_path
 
     woosh_offset = max(0, settle_time - WOOSH_PEAK)

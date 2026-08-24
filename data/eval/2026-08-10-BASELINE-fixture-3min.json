@@ -1,0 +1,72 @@
+{
+  "video": "test_e2e/output/video_002_final.mp4",
+  "ass": "<scratchpad>/evalart/video_002_subs.ass",
+  "modelo_referi": "small",
+  "n_palabras_ass": 446,
+  "n_palabras_whisper": 467,
+  "n_emparejadas": 422,
+  "cobertura": 0.9462,
+  "error_medio_abs": 0.0723,
+  "error_max_abs": 0.4,
+  "sesgo": -0.0669,
+  "pausas_fuera_de_puntuacion": [
+    {
+      "tras": "CONTRAÍA",
+      "hueco": 0.46,
+      "t": 94.21
+    }
+  ],
+  "medicion_valida": true,
+  "fecha": "2026-08-10",
+  "es_baseline": true,
+  "nota_baseline": "PRIMERA corrida: fija la linea base. No aprueba ni bloquea nada.",
+  "config": "test_e2e/config.yaml",
+  "commit": "c9ac16d + fix --keep-temp",
+  "peticiones_openrouter": 5,
+  "duracion_corrida_min": 14,
+  "percentiles_error_abs": {
+    "p50": 0.07,
+    "p75": 0.1,
+    "p90": 0.11,
+    "p95": 0.12,
+    "p99": 0.15,
+    "p100": 0.4
+  },
+  "palabras_error_mayor_0_30": 1,
+  "ratio_duracion_video_chunk": 0.779,
+  "chunk_s": 191,
+  "video_s": 148.7,
+  "nota_ratio": "NO valida target_wpm: el fixture es de 3 min y 160 se calibro para 30 min. A 3 min la voz corre a ~180-200 wpm y a 30 min a ~160.",
+  "geometria": {
+    "largo": "1920x1080 + (960,540) OK",
+    "short": "1080x1920 + (540,960) OK"
+  },
+  "shorts": {
+    "generados_esta_corrida": 4,
+    "total_en_dir": 8,
+    "similitud_lexica_max": 0.542,
+    "nota": "proxy que NO discrimina: 'misma historia reescrita' puntua 0,542 y los shorts buenos 0,376. Los 8 argumentos son distintos a lectura humana."
+  },
+  "anclaje": {
+    "video": "12/12",
+    "shorts": [
+      "13/13",
+      "7/7",
+      "8/8"
+    ],
+    "repartidas_por_caracteres": 0
+  },
+  "descartes_validador": 0,
+  "artefactos": {
+    "videos": 2,
+    "thumbnails": 2,
+    "titulos": 2,
+    "shorts": 8,
+    "titulos_shorts": 8,
+    "faltantes": 0
+  },
+  "umbrales_incumplidos": [
+    "error_max 0.400s > 0.30s (1 palabra de 422, el monosilabo 'Y')",
+    "pausas_fuera_de_puntuacion 1 > 0 (0.46s tras 'CONTRAIA': prosodia de edge-tts, documentada como inevitable)"
+  ]
+}

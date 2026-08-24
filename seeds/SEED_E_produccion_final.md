@@ -1,3 +1,5 @@
+> 🔵 ABIERTO.
+
 # SEED E — Producción real y veredicto final (VA EL ÚLTIMO Y VA SOLO)
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

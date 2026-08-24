@@ -47,7 +47,8 @@ Meses o años después: cómo está ahora el protagonista. Qué fue de los demá
 REGLAS DE ESTILO:
 - Detalle alto pero sin paja ni frases de relleno.
 - NO incluyas: "Suscríbete", "dale like", menciones a Reddit, subforos, internet, el canal o la audiencia.
-- NO incluyas comentarios meta como "esta historia es inventada".
+- No rompas la cuarta pared: nada de comentarios sobre el propio relato, ni
+  apartes dirigidos al oyente. Narra la historia y nada mas.
 - Escribe SOLO el título en la primera línea, luego el speech completo.
 - Separa título y speech con una línea en blanco.
 

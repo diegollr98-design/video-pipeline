@@ -1,3 +1,5 @@
+> ✅ EJECUTADO (18-ago-2026).
+
 > ## ⚠️ EJECUTADO Y CORREGIDO EL 2026-08-18 — NO LO VUELVAS A EJECUTAR TAL CUAL
 >
 > `/seed-review` TIER PANEL (1 agente **ciego** + 3 críticos). Veredicto: **✏️ CON EDICIONES**.

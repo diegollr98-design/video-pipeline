@@ -463,7 +463,8 @@ def _premix_woosh_short(audio_path, output_path, settle_time=SETTLE_TIME):
         # se enteraba.
         logger.warning(
             f"Woosh no encontrado en {WOOSH_PATH!r}: el short se compone SIN "
-            f"sonido de intro."
+            f"sonido de intro. Es material de terceros y no se distribuye con "
+            f"el repo: ver assets/README.md"
         )
         return audio_path
 

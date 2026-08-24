@@ -140,7 +140,7 @@ Fase 3 — Competencia (independiente, no produce videos):
 ## Estructura
 
 - `main.py` — orquestador + CLI
-- `dashboard.py` — dashboard Streamlit (7 pestañas)
+- `dashboard.py` — dashboard Streamlit (8 pestañas)
 - `dashboard_runner.py` — lanza el pipeline como subproceso (funciones puras, sin Streamlit)
 - `config.yaml` — toda la configuración
 - `.env` — OPENROUTER_API_KEY, YOUTUBE_API_KEY
@@ -149,7 +149,7 @@ Fase 3 — Competencia (independiente, no produce videos):
 - `assets/3.png` — plantilla miniatura/intro (PNG transparente)
 - `assets/stereogenicstudio-swish-swoosh-woosh-sfx-27-357164.mp3` — woosh sound
 - `assets/.tint_index` — rotación de color para miniaturas (golden angle)
-- `prompts/reddit_story.txt` — prompt completo estilo "Dosis de Subforos"
+- `prompts/reddit_story.txt` — prompt completo estilo narración de historias de foro
 - `prompts/short_story.txt` — prompt para micro-historias de shorts (~200 palabras)
 - `modules/`
   - `video_cleaner.py` — detecta hotbar Minecraft, elimina pausa/escritorio/menús
@@ -337,21 +337,21 @@ Cada set de shorts genera 2 archivos por short en `shorts_tiktok/` (configurable
 - `metrics_partial` marca los videos cuyo canal oculta likes/comentarios, para no leer engagement 0 como "video malo"
 
 ### Competencia — descubrimiento (aprendido con la API real)
-- **Las keywords deben apuntar al FORMATO, no solo al tema.** Buscando por tema ("mi suegra me humilló") entran canales de terror, novelas chinas dobladas y cortometrajes que compiten en otra liga. Buscando "historias de reddit minecraft" aparecieron los competidores reales: Lo Redditor (542k subs), Historias Reddit (236k), HISTORIAS DE LA RED, Poro-Snax
+- **Las keywords deben apuntar al FORMATO, no solo al tema.** Buscando por tema ("mi suegra me humilló") entran canales de terror, novelas chinas dobladas y cortometrajes que compiten en otra liga. Buscando "historias de reddit minecraft" aparecieron los competidores reales del nicho: varios canales del mismo formato (542k y 236k subs los dos mayores, más otros dos)
 - **`topicDetails` es la única pista de gameplay** y sale gratis (en la API v3 el coste es por método, no por part). Da 0% en canales de otro formato y 60-100% en los que sí narran sobre gameplay. NO sirve como filtro duro (`require_gameplay` existe pero va desactivado): un canal real puede no emitirla
 - **Suelo de vistas obligatorio** (`scoring.min_views`): un canal con mediana de 47 vistas colocó un video de 286 vistas en el puesto 4 del ranking. xN sobre una mediana ridícula es ruido, no viralidad
 - **El heurístico de idioma no puede usar palabras ambiguas**: con "me" y "y" dentro, el título inglés "a dream made me kiss my friend and now we're both g@y" puntuaba como español (la `y` sale de "g@y") y colaba un canal inglés en el puesto 2. Ahora exige ganarle a un set de marcadores ingleses, y las grafías ñ/tildes/¿¡ valen doble
-- **Sin texto suficiente NO se rechaza por idioma**: se aplaza al filtro de contenido, que juzga por títulos de videos. Rechazar de golpe tiraba a rBarra Historias (124k subs) y Venganza En Solitario (58.9k), españoles ambos, solo por tener la descripción del canal vacía
+- **Sin texto suficiente NO se rechaza por idioma**: se aplaza al filtro de contenido, que juzga por títulos de videos. Rechazar de golpe tiraba a dos competidores reales (124k y 58,9k subs), españoles ambos, solo por tener la descripción del canal vacía
 - **Los rechazos se reconsideran** (`revive_rejected`): al cambiar los filtros de `discovery` o pasar `recheck_rejected_after_days`, los rechazos no permanentes se re-cualifican con los datos ya guardados, sin gastar cuota. Sin esto, un filtro mal calibrado dejaba canales muertos para siempre
 - **Un corte de cuota no debe rechazar canales**: si hay IDs de video pero no llegan datos, se deja el canal intacto para la próxima corrida. Antes quedaba marcado "sin videos recientes" de forma permanente y la lista se vaciaba sola
 - **El `keyword_offset` avanza solo por búsquedas realmente hechas**, y se reinicia si cambia la lista de keywords (huella en el state). Si no, las keywords nuevas tardaban varios escaneos en entrar en rotación
 
 ### Competencia — clasificación de nicho (por qué la hace un LLM y no un heurístico)
-- El nicho es "historias de Reddit narradas en primera persona sobre gameplay". Buscando por tema entran **granjas de drama asiático doblado** (Oro Drama, ReyDrama, ChiNo Drama, Silk Heart Drama, Gatito Giratorio…), películas, cortometrajes y podcasts de terror
+- El nicho es "historias de Reddit narradas en primera persona sobre gameplay". Buscando por tema entran **canales de drama asiático doblado en serie** (varios canales del mismo formato, ~5 en el corpus escaneado), películas, cortometrajes y podcasts de terror
 - Se probaron tres heurísticos y **ninguno separa**:
   - `topicDetails` de gameplay: 0% en canales de otro formato, 60-100% en los buenos, pero un competidor real puede no emitirla
-  - Puntuación CJK (`【】`) en títulos: precisa pero solo caza a los que no traducen los corchetes (1 de 13 de la granja)
-  - Ratio de primera persona en títulos: da 0% en rBarra Historias (competidor real, 124k subs) y 25% en Cuando Los Ángeles Caen (líder, 1M de mediana), pero 75% en Gatito Giratorio (drama doblado). Cualquier umbral mata competencia real o deja pasar la granja
+  - Puntuación CJK (`【】`) en títulos: precisa pero solo caza a los que no traducen los corchetes (1 de 13 de ese grupo de canales)
+  - Ratio de primera persona en títulos: da 0% en un competidor real (124k subs) y 25% en el líder del nicho (mediana 1M), pero 75% en un canal de drama doblado. Cualquier umbral mata competencia real o deja pasar ese grupo de canales
 - Por eso `trend_advisor.classify_channels` le pasa 4 títulos de muestra por canal al LLM. Es coste $0, se pregunta **una sola vez por canal** (`llm_in_niche` queda en el state) y si falla el escaneo continúa sin clasificar
 - **Lotes de 8, no de 25**: con 25 el modelo devolvió veredicto de 3 canales y se saltó 49 en silencio. Los canales que el modelo omite se quedan activos y se avisa por log
 - Los heurísticos se conservan como **columnas informativas** (`gameplay_ratio`, `first_person_ratio`) para curar la lista a mano desde el dashboard
@@ -446,7 +446,7 @@ Hay TRES causas distintas y solo una es inevitable:
 ### Dashboard de operación (COMPLETO)
 - [x] `dashboard.py` + `dashboard_runner.py`, se ejecuta con `streamlit run dashboard.py`
 - [x] Pipeline lanzado como SUBPROCESO (nunca importando funciones de fase)
-- [x] 7 pestañas: Roadmap, Estado, Operar, Progreso, Resultados, Competencia, Config
+- [x] 8 pestañas: Roadmap, Estado, Operar, Progreso, Resultados, Subir, Competencia, Config
 
 ### Análisis de competencia (COMPLETO)
 - [x] Descubrimiento de competidores por keywords rotativas + canales semilla
@@ -457,50 +457,65 @@ Hay TRES causas distintas y solo una es inevitable:
 - [x] Debate LLM: veredicto argumentado + directrices + titulares de ejemplo
 - [x] Inyección reversible en el prompt de historias, con el OK del usuario
 
-### Validación E2E — dos escalas, dos veredictos DISTINTOS
+### Validación E2E — cronología, no "el estado actual" (cada afirmación fechada)
 
 **Fixture de 3 min (ago 2026) — ✅ pasa.** Ingesta (hotbar 18/18) -> pool (1120MB -> 296MB) ->
 historia -> TTS -> forced alignment (anclas duras 9/9) -> ASS -> intro -> composición ->
 miniatura -> 3 shorts. Verificado FOTOGRAMA A FOTOGRAMA. Reproducible con un clip corto en su
 propio `input_dir`: no hace falta procesar los 13 GB. Destapó el bug del demuxer `concat`.
 
-**Producción real de 30 min (10-ago-2026) — 🔴 vídeo NO publicable, con el gate en VERDE.**
+**10-ago-2026 — primera producción real de 30 min — 🔴 vídeo NO publicable, con el gate en VERDE.**
 33,4 min de gameplay -> vídeo de 29,85 min + 50 shorts, 53 peticiones, ~2h40 de reloj. Dos
-defectos que el fixture de 3 min **no puede ver** (`produccion-loop.md` §C):
+defectos que el fixture de 3 min **no podía ver** (`produccion-loop.md` §C):
 - **basura del modelo narrada y subtitulada** en el minuto 15:38-15:47 → arreglado con
   `_detectar_basura` (los guardias solo miraban la cabecera) [BASURA-01]
 - **4 ventanas de anclaje con frases enteras ~1 s por detrás de la voz** (zona 1000-1040 s:
   **+1,050 s**, 90 de 125 palabras >0,5 s; control 300-340 s: −0,110 s) [ANCLA-01]
 
-> ✅ **[ANCLA-01] ARREGLADO** (10 → 14-ago-2026, verificado 18-ago). El anclaje pasó por **tres**
-> versiones y a dos las tumbó la medición; la vigente distingue ancla corrupta de deriva del
-> alineador y trata la ventana aplastada ([ANCLA-02..06]). Medido contra transcripción
-> independiente en las dos producciones reales: palabras desincronizadas **204 → 9** y **73 → 0**,
-> p95 **1,010 → 0,283 s**, solapes 2 → 0. Última corrida del fixture (18-ago): medio **0,045 s**,
-> p95 0,090, **0 palabras >0,5 s tarde**.
-> ⚠️ Este aviso decía **"SIGUE VIVO … fix propuesto, NO aplicado"** y apuntaba a
-> `tts_engine.py:458`, donde hoy vive otra función. Llevaba días siendo falso: es [DOC-01] otra vez
-> —un dato caducado en un `.md` que se lee como hecho— dentro del propio fichero que lo denuncia.
+**10 → 14-ago-2026 — [ANCLA-01] arreglado, verificado 18-ago.** El anclaje pasó por **tres**
+versiones y a dos las tumbó la medición; la vigente distingue ancla corrupta de deriva del
+alineador y trata la ventana aplastada ([ANCLA-02..06]). Medido contra transcripción
+independiente en las dos producciones reales: palabras desincronizadas **204 → 9** y **73 → 0**,
+p95 **1,010 → 0,283 s**, solapes 2 → 0. Corrida del fixture (18-ago): medio **0,045 s**,
+p95 0,090, **0 palabras >0,5 s tarde**.
+
+**18/20-ago-2026 — primeras producciones reales con veredicto limpio** (`sessions-log.md` v1.2/v1.3):
+`video_012` (fixture, 18-ago) y `video_005`/`video_007` (producción, 19/20-ago) →
+**`VEREDICTO: sin defectos MEDIBLES`**. Son las primeras corridas a escala real que salen limpias
+desde el 10-ago; entre medias se cerraron, además de [BASURA-01] y [ANCLA-01], [CIERRE-01],
+[COMA-05], [COHER-01] y [SHORTREP-01].
+
+> ⚠️ **La lección de la corrida del 10-ago sigue siendo cierta y es la que importa: el gate en
+> VERDE no garantiza un vídeo publicable.** El propio "sin defectos MEDIBLES" de 18/20-ago tuvo
+> luego un matiz — `sessions-log.md` v1.3 registra que el detector de coherencia que sostenía ese
+> veredicto tenía un punto ciego real (`[COHER-02]`, arreglado el 20-ago-2026, ver commit
+> `005523a`). **No des por bueno "sin defectos MEDIBLES" de una fecha vieja**: la huella del
+> auditor cambia con cada fix y los veredictos caducan (`produccion-loop.md` §C). Verifica con el
+> auditor VIGENTE, no con esta tabla.
+>
+> Este mismo apartado dijo durante días **"la única corrida a escala real salió no publicable"**
+> cuando ya había corridas limpias posteriores — es [DOC-01] otra vez: un dato caducado en un
+> `.md` que se lee como hecho, dentro del propio fichero que lo denuncia.
 
 ### Lo que falta para que el pipeline esté FINALIZADO
 
-La cadena corre de punta a punta, pero **la única corrida a escala real salió no publicable**.
-Cada seed lleva `/seed-review` como paso 0. Orden recomendado: 0 → 1 → 2.
+La cadena corre de punta a punta y ya dio veredictos limpios en producción (arriba), pero el
+objetivo "autónomo hasta publicar" no está cerrado. El trabajo vivo está en `seeds/`, donde **cada
+fichero lleva un banner de estado como primera línea** (⛔ SUPERADO / ✅ EJECUTADO / 🔵 ABIERTO) —
+consúltalo ahí en vez de en esta tabla, que caduca. Seeds **abiertas** a fecha 24-ago-2026:
 
-| # | Seed | Qué cierra |
-|---|---|---|
-| **0** | **`SEED_sincronismo_produccion.md`** | **BLOQUEANTE.** Arreglar el medidor (`eval_sync.py` empareja con `difflib` global y fabrica retraso [INSTR-02]), aplicar y verificar el fix de [ANCLA-01], `target_wpm` (n=2: 160,6 y 177,2), variedad de los 50 shorts, y qué hacer con un gate que no cubre producción |
-| 1 | `SEED_1_cierre_funcional.md` | Directrices de competencia en `short_story.txt` (hoy solo llegan a `reddit_story.txt`, así que los shorts ignoran el análisis) · escaneo de competencia programado (hoy solo manual) · `st.components.v1.html` deprecado desde 2026-06-01 |
-| 2 | `SEED_2_subida_youtube.md` | **La subida a YouTube**: el pipeline se para en `output/` y el usuario sube a mano. Es el último paso para cumplir el objetivo "autónomo". Necesita OAuth y decisiones del usuario. `videos.insert` cuesta 1.600 unidades de las 10.000 diarias, compartidas con el análisis de competencia |
-| 5 | `SEED_5_caza_bugs.md` | Calidad, no bloquea. Revisión de bugs del pipeline y del dashboard, con las clases de fallo ya vistas aquí como guía |
+| Seed | Qué cierra |
+|---|---|
+| `SEED_B_subida_youtube.md` | La subida a YouTube tiene código (`youtube_uploader.py`, pestaña 📤 Subir) pero `requirements.txt` no lista las dependencias de Google y `data/client_secret.json` no existe: en una instalación limpia no arranca. Necesita decisiones y credenciales del usuario |
+| `SEED_E_produccion_final.md` | Producción real de ~30 min con las constantes vigentes + `output-audit` + el juicio de Diego, como cierre formal de la validación a escala. Bloqueada por disco/pool sin gameplay usable a fecha del seed |
+| `SEED_post_grabacion.md` | Lo que quedó abierto tras grabar el vídeo de portafolio (18/20-ago): huecos de medición que el gate no cubre, defectos con dueño pendiente ([ANCLA-07], [SHORTDUR-01], [WOOSH-01]) y limpieza del propio repo antes de publicarlo |
 
-**Ya ejecutadas** (no volver a lanzarlas): `SEED_3_produccion_30min.md` (10-ago → es la corrida de
-arriba) y `SEED_validar_cambios.md` **v2** (10-ago, ver `sessions-log.md` v0.2).
-⚠️ `SEED_4_validar_cambios.md` es la **v1 de esa misma seed, que un panel adversarial TUMBÓ**
-(4 de 6 bloques sin instrumento válido, el paralelismo corrompía las mediciones). Está marcada como
-superada: no la ejecutes.
+Cada seed lleva `/seed-review` como paso 0. **No re-litigues aquí** qué seeds están superadas o ya
+ejecutadas (`SEED_1`, `SEED_2`, `SEED_3`, `SEED_4`, `SEED_5`, `SEED_C`, `SEED_D`,
+`SEED_alineador_ventana_aplastada`, `SEED_comas_y_cierre`, `SEED_grabar_video_portafolio`,
+`SEED_revision_12ago`, `SEED_sincronismo_produccion`, `SEED_validar_cambios`): sus propios banners
+lo dicen y son la fuente que no caduca en silencio, porque viven junto al texto que describen.
 
-**No paralelizar a la ligera**: la 0 monopoliza GPU, `pool/` y `output/`; la 0 y la 5 compiten por la
-cuota de OpenRouter; la 1 y la 2 chocan en `dashboard.py`, `main.py` y `config.yaml`. Y el contador de
-cuota de YouTube vive en `data/competitors.json`: dos procesos escribiéndolo a la vez pierden
-actualizaciones y el corte preventivo deja de proteger. **Disco al 97%** tras la corrida larga.
+**No paralelizar a la ligera** entre seeds abiertas: comparten `pool/`, `output/`, `dashboard.py`,
+`main.py`, `config.yaml` y el contador de cuota de YouTube en `data/competitors.json` (dos procesos
+escribiéndolo a la vez pierden actualizaciones y el corte preventivo deja de proteger).

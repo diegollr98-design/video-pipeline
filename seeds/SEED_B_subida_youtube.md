@@ -1,3 +1,5 @@
+> 🔵 ABIERTO.
+
 # SEED B — Que el vídeo se publique SOLO (último paso de "autónomo")
 
 > PASO 0 OBLIGATORIO: invoca /seed-review sobre este SEED antes de tocar nada.

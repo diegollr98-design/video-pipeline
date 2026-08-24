@@ -120,10 +120,10 @@ def classify_channels(candidates, config, progress=None):
     """Pregunta al modelo cuáles de estos canales son competencia de verdad.
 
     Se recurre al LLM porque los heurísticos NO bastan, y está medido: el ratio
-    de primera persona en los títulos da 0% en rBarra Historias (competidor real
-    con gameplay) y 25% en Cuando Los Ángeles Caen (líder del nicho), pero 75%
-    en Gatito Giratorio (drama chino doblado). Cualquier umbral o mata
-    competencia real o deja entrar la granja de dramas.
+    de primera persona en los títulos da 0% en un competidor real (con
+    gameplay) y 25% en el líder del nicho, pero 75% en un canal de drama
+    chino doblado. Cualquier umbral o mata competencia real o deja entrar
+    esos canales de drama doblado.
 
     Devuelve {channel_id: (es_competencia, motivo)}. Si falla, devuelve {} y el
     escaneo continúa sin clasificar: nunca debe tumbar una corrida.

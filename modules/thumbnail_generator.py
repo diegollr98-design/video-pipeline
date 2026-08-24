@@ -145,7 +145,10 @@ def generate_thumbnail(video_path, title, output_path, config):
     )
 
     if not os.path.isfile(template_path):
-        logger.warning(f"Template no encontrado: {template_path}, saltando thumbnail")
+        logger.warning(
+            f"Template no encontrado: {template_path}, saltando thumbnail. "
+            f"Es material de terceros y no se distribuye con el repo: ver assets/README.md"
+        )
         return
 
     temp_dir = config["paths"]["temp_dir"]

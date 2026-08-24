@@ -9,3 +9,8 @@ numpy             # video_cleaner: detección de hotbar sobre frames
 faster-whisper    # backend de reconocimiento para el forced alignment
 stable-ts         # forced alignment palabra a palabra (importa como stable_whisper)
 streamlit         # dashboard de operación
+
+# Subida a YouTube (pestaña 📤 Subir del dashboard). Solo hacen falta si vas a
+# usarla; el resto del pipeline corre sin ellas.
+google-auth               # credenciales OAuth (google.oauth2.credentials)
+google-auth-oauthlib      # flujo de consentimiento (InstalledAppFlow)
