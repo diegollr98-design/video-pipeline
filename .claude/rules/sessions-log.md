@@ -14,6 +14,44 @@ Bitácora por hito. **Más reciente arriba.** Mantener ≤ 100 líneas: las entr
 
 ---
 
+## v1.4 — 2026-08-24 — El repo es PÚBLICO, y lo que casi lo hunde no lo encontró ninguna auditoría ✅
+**Qué se hizo:** `/seed-review` (1 ciego + 3 críticos) sobre `SEED_reauditoria_seguridad_publicacion.md`
+y ejecución de sus tres fases. El panel tumbó su Fase 1 —ordenaba *"audita el REMOTO, clona limpio"* y
+*"si va por detrás, para"*, y el único commit que le faltaba al remoto era el fix entero de **[SEC-01]**:
+auditar el clon era auditar el estado pre-fix— y su premisa *"`HEAD` está limpio"* de terceros. **Seis
+defectos cerrados**: [DOC-03] el fix de cuota dejó viva su premisa falsa (`youtube_uploader.py` se
+contradecía **en 7 líneas**), [DOC-04] los números **derivados** del modelo viejo seguían vivos
+(`~500 unidades` en pantalla, 6× inflado), [DOC-05] **el README publicaba un transcript FABRICADO**, y
+[DOC-06] el residuo vivía en los **skills**, que no llevan banner. Luego: `git push` de 5 commits y flip
+a público.
+**Incidentes:** [SEC-01] [QUOTA-02] [QUOTA-02b] [DOC-03] [DOC-04] [DOC-05] [DOC-06].
+**Verificación:** barrido de secretos con **instrumento calibrado** (9 controles positivos disparan, 0
+falsos) sobre **366 blobs / 9.875.452 bytes** → **0 credenciales de 12 clases**, 0 emails en blobs, 0 en
+mensajes de commit. Los 5 arreglos de [SEC-01] **reproducidos**: 15/15 payloads de travesía bloqueados
+contra el bloque extraído de `master:dashboard.py` (incluidos 4 que el ledger no probó: `..%2f..%2f`,
+byte nulo, ruta absoluta Windows), `netstat` → `TCP 127.0.0.1:8721 LISTENING`, fuga de clave A/B
+`True → False`, config raw sin la clave del overlay, token `0o600`. [DOC-05] contrastado línea a línea
+contra `pipeline.log:5988`: el README publicaba `0 palabras`/`0.00s`/`-14.6 LUFS` y la corrida real daba
+`1`/`0.39s`/`-15.4` **más dos AVISO omitidos**; los valores limpios salían de `pipeline.log:579,582,790`
+—otras corridas, otros días—. Tras publicar: SHA que sirve GitHub = local, `0 0`, y el bloque que ve un
+extraño es el honesto.
+**Lo que esto enseña:** (a) **un hueco declarado no es un hueco cerrado** — cuatro veces se dio el repo
+por publicable con el 13,7% de `seeds/` declarado *"solo barrido por patrón, no leído"*, y [DOC-05] vivía
+justo ahí, **escrito en el propio repo desde el 20-ago**; lo cerró leerlo (4 agentes × ~680 líneas);
+(b) **la estructura rindió más que el rigor**: lo que funcionó fue una sesión SIN el contexto de quien
+hizo los cambios y con el encargo de refutar, que **retiró su propio "puede ser público"**; (c) **un
+instrumento roto no da error, da un veredicto falso** — `git cat-file origin/master:<path>` devolvía "no
+existe" porque Git-for-Windows convierte la ruta en silencio (`MSYS_NO_PATHCONV=1`), y llegué a propagar
+ese hecho falso al SEED; (d) §17 2.º corolario **cinco veces en una sesión**, siempre igual: se corrige
+la constante y no las copias derivadas.
+**Pendiente:** los tres cupos del proyecto en Google Cloud Console (una línea de `config.yaml`);
+`prompts/reddit_story.txt` sin pasar por `/eval` tras su reescritura; el **apóstrofo sin escapar** en la
+ruta del `.ass` (`video_composer.py:84` y su gemelo `shorts_generator.py:505`) — no explotable, pero toca
+composición y pide `/eval`. La cabecera del ledger dice *"más reciente arriba"* y sus 100+ entradas van
+en orden **ascendente**. Este fichero va **muy por encima de su tope de 100 líneas** (cuéntalas con
+`wc -l`: la cifra exacta se invalida sola al escribirla, así que no se hornea) y hay 7 incidentes
+nuevos, varios de la misma clase: el próximo `/optimize` es de **poda y promoción**.
+
 ## v1.3 — 2026-08-19/20 — Grabado el vídeo de portafolio: los tres últimos fallos no eran del pipeline ✅
 **Qué se hizo:** día de grabación. El vídeo largo llevaba rato saliendo bien y aun así la toma falló
 tres veces seguidas — **ninguna por el pipeline**: **[LOG-03]** el subproceso del dashboard nacía en
