@@ -1,14 +1,14 @@
 # Ledger de Incidentes
 
 **Append-only.** Registro FACTUAL de incidentes/near-misses (proceso, bugs, verificación fallida…).
-Vive en `.claude/` → **NO se auto-carga** (sin coste de tokens por sesión). **No editar entradas pasadas; solo añadir** (más reciente arriba).
+Vive en `.claude/` → **NO se auto-carga** (sin coste de tokens por sesión). **No editar entradas pasadas; solo añadir** (más reciente **abajo**, al final del fichero).
 
 **Uso:** materia prima de la auto-mejora. **Solo `/optimize`** promueve una entrada a regla, y solo con **≥2 incidencias independientes** de la misma clase, **o 1 de clase irreversible** (dinero/datos/seguridad/PII).
 
 **Formato:** `- [id] fecha · clase · qué pasó · evidencia · estado`
 **Estado:** `pendiente (>=2)` = registrado, sin promover · `promovido -> <regla>` = ya es regla.
 
-<!-- entradas nuevas debajo, más reciente arriba -->
+<!-- entradas nuevas AL FINAL del fichero: este ledger va en orden cronologico ASCENDENTE -->
 
 > **Promoción del 2026-08-10 (`/optimize`).** Cuatro clases superaron el umbral y ya son regla:
 > · **instrumento no calibrado** (3 incidencias: SYNC-01, INSTR-01, INSTR-02) → `produccion-loop.md` §D, regla madre
