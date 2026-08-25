@@ -179,6 +179,14 @@ la clase entera desaparece por construcción en lugar de volverse improbable.
 | **intro** | el fundido de la tarjeta empieza **~0,2 s antes** de que el narrador acabe el título: `fade_start = max(title_end - 0.3, 3.0)` (`video_composer.py:98`). Verificado por fotogramas: a 8,70 s la tarjeta está atenuada con la voz aún diciendo "amiga". `CLAUDE.md` dice *"fade out cuando termina la frase"* | `video_composer.py:98` |
 | **[SHORTVID-01] [APERTURA-01]** | abiertos desde el 14-ago | shorts |
 | **audio** | la pista sale a 96 kHz desde una fuente de 24 kHz (`-af loudnorm` da 192 kHz y el AAC lo recorta; falta `-ar 48000`). 181 kbps mono para voz de banda 24 kHz: desperdicio, sin efecto audible | `video_composer.py:167` |
+| **[QUOTE-01]** | la ruta del `.ass` se interpola **entre comillas simples** dentro de `-filter_complex` escapando `\` y `:` pero **no `'`**. No es explotable (la ruta sale de `config.yaml`, no de entrada externa), pero **rompe a quien clone el repo con un apóstrofo en su usuario de Windows** — y el repo ya es público. Par gemelo (§11): está en los dos. Toca composición → **superficie sensible, pide `/eval`** | `video_composer.py:84,124,142` · `shorts_generator.py:505,549,564` |
+| **cuota GCloud** | nadie ha mirado si el reparto de tres cupos que Google documenta coincide con el asignado **al proyecto concreto de Diego** (está en su consola). Hoy el contador cae del lado **permisivo** y así está declarado en `config.yaml`. Si no coinciden, es **una línea** de `config.competition.quota.limits` | `config.yaml` |
+| **prompt sin medir** | `prompts/reddit_story.txt` se reescribió una línea el 24-ago y **no ha pasado por `/eval`**. No toca sincronismo, así que no bloqueaba publicar, pero **no está medido** y es superficie sensible | `prompts/reddit_story.txt` |
+
+> **Las tres últimas se registraron el 24-ago-2026 al cerrar la auditoría de publicación, y ninguna
+> afecta al repo como pieza de portafolio** — se dejan aquí para no perderlas, no porque bloqueen nada.
+> `[QUOTE-01]` es la única que puede molestar a un tercero: quien clone con un apóstrofo en su ruta de
+> usuario. Las otras dos son deuda de medición y de config local.
 
 ---
 
